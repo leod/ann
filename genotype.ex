@@ -6,7 +6,7 @@ defmodule Genotype do
   defrecord Actuator, id: nil, monitor_id: nil, f: nil, vl: [], input_ids: []
   defrecord Monitor, id: nil, sensor_ids: [], actuator_ids: [], neuron_ids: []
 
-  def create_genotype(sensor_fs, actuator_fs, hidden_layer_densities) do
+  def create(sensor_fs, actuator_fs, hidden_layer_densities) do
     sensors = map(sensor_fs, &create_sensor/1) 
     actuators = map(actuator_fs, &create_actuator/1)
 
@@ -35,10 +35,43 @@ defmodule Genotype do
     genotype
   end
 
-  def save_genotype(genotype, file_name) do
-    {:ok, file} = File.open(file_name, [:write])
-    map(genotype, fn x -> :io.format(file, "~p.~n", [x]) end)
-    File.close(file)
+  def save(genotype, file_name) when is_list(genotype) do
+    table_id = :ets.new(file_name, [:public, :set, {:keypos, 1}])
+    map(genotype, fn x -> :ets.insert(table_id, x) end)
+    :ets.tab2file(table_id, file_name)
+  end
+
+  def save(table_id, file_name) do
+    :ets.tab2file(table_id, file_name)
+  end
+
+  def load(file_name) do
+    {:ok, table_id} = :ets.file2tab(file_name)
+    table_id
+  end
+
+  def read(table_id, key) do
+    [r] = :ets.lookup(table_id, key)
+    r
+  end
+
+  def write(table_id, r), do: :ets.insert(table_id, r)
+
+  def print(file_name) do
+    genotype = load(file_name)
+
+    # Temp hack
+    [monitor] = filter(:ets.tab2list(genotype), fn o ->
+      case o.id do
+        {:monitor, _} -> true
+        _ ->  false
+      end
+    end)
+
+    :io.format("~p~n", [monitor])
+    map monitor.sensor_ids, fn id -> :io.format("~p~n", [read(genotype, id)]) end
+    map monitor.neuron_ids, fn id -> :io.format("~p~n", [read(genotype, id)]) end
+    map monitor.actuator_ids, fn id -> :io.format("~p~n", [read(genotype, id)]) end
   end
 
   def create_sensor(f) do
