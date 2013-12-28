@@ -1,31 +1,39 @@
 defmodule Sensor do
   import Enum
 
-  def create(mapper_pid) do
-    spawn(Sensor, :loop, [mapper_pid])
+  defrecord State, id: nil, monitor_pid: nil, f: nil, vl: nil, output_pids: nil
+
+  def create(organism_pid) do
+    spawn(Sensor, :start, [organism_pid])
   end
 
-  def loop(mapper_pid) do
+  def start(organism_pid) do
     IO.puts "Sensor begin #{inspect self}"
 
     receive do
-      {^mapper_pid, {id, monitor_pid, f, vl, output_pids}} ->
-        loop(id, monitor_pid, f, vl, output_pids)
+      {^organism_pid, {id, monitor_pid, f, vl, output_pids}} ->
+        loop(State.new(id: id,
+                       monitor_pid: monitor_pid,
+                       f: f,
+                       vl: vl,
+                       output_pids: output_pids))
     end
   end
 
-  def loop(id, monitor_pid, f, vl, output_pids) do
+  def loop(s) do
+    monitor_pid = s.monitor_pid
+
     receive do
       {^monitor_pid, :sync} ->
         #v = f.(vl)
-        v = case f do
-          :rng -> rng(vl)
+        v = case s.f do
+          :rng -> rng(s.vl)
         end
-        map output_pids, fn pid ->
+        map s.output_pids, fn pid ->
           pid <- {self, :forward, v}
         end
 
-        loop(id, monitor_pid, f, vl, output_pids)
+        loop(s)
 
       {^monitor_pid, :terminate} ->
         :ok
