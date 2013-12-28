@@ -1,47 +1,49 @@
 defmodule Monitor do
   import Enum
 
-  def create(mapper_pid) do
-    spawn(Monitor, :loop, [mapper_pid])
+  defrecord State, id: nil, organism_pid: nil, sensor_pids: nil, actuator_pids: nil, neuron_pids: nil
+
+  def create(organism_pid) do
+    spawn(Monitor, :start, [organism_pid])
   end
 
-  def loop(mapper_pid) do
+  def start(organism_pid) do
     IO.puts "Monitor begin #{inspect self}"
 
     receive do
-      {^mapper_pid, {id, sensor_pids, actuator_pids, neuron_pids}, num_steps} ->
+      {^organism_pid, {id, sensor_pids, actuator_pids, neuron_pids}, num_steps} ->
         map sensor_pids, fn pid ->
           pid <- {self, :sync}
         end
-        loop(id, mapper_pid, sensor_pids, actuator_pids,
-             actuator_pids, neuron_pids, num_steps)
+        loop(State.new(id: id,
+                       organism_pid: organism_pid,
+                       sensor_pids: sensor_pids,
+                       actuator_pids: actuator_pids,
+                       neuron_pids: neuron_pids),
+             actuator_pids,
+             num_steps)
     end
   end
 
-  def loop(id, mapper_pid, sensor_pids, actuator_pids,
-            all_actuator_pids, neuron_pids, 0) do
-    weights = get_state(neuron_pids, [])
-    mapper_pid <- {self, :save, weights}
-    terminate([sensor_pids, all_actuator_pids, neuron_pids])
+  def loop(s, _actuator_pids, 0) do
+    weights = get_state(s.neuron_pids, [])
+    s.organism_pid <- {self, :save, weights}
+    terminate([s.sensor_pids, s.actuator_pids, s.neuron_pids])
   end
 
-  def loop(id, mapper_pid, sensor_pids, [actuator_pid | actuator_pids],
-            all_actuator_pids, neuron_pids, step) do
+  def loop(s, [actuator_pid | actuator_pids], step) do
     receive do
       {^actuator_pid, :sync} ->
-        loop(id, mapper_pid, sensor_pids, actuator_pids,
-             all_actuator_pids, neuron_pids, step)
+        loop(s, actuator_pids, step)
     end
   end
 
-  def loop(id, mapper_pid, sensor_pids, [], all_actuator_pids,
-            neuron_pids, step) do
-    map sensor_pids, fn pid ->
+  def loop(s, [], step) do
+    map s.sensor_pids, fn pid ->
       pid <- {self, :sync}
     end 
 
-    loop(id, mapper_pid, sensor_pids, all_actuator_pids,
-         all_actuator_pids, neuron_pids, step - 1)
+    loop(s, s.actuator_pids, step - 1)
   end
 
   def get_state([neuron_pid | neuron_pids], acc) do

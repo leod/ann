@@ -1,44 +1,49 @@
 defmodule Neuron do
   import Enum
 
-  def create(mapper_pid) do
-    pid = spawn(Neuron, :loop, [mapper_pid])
+  defrecord State, id: nil, organism_pid: nil, monitor_pid: nil, af: nil, w_input_pids: nil, output_pids: nil
+
+  def create(organism_pid) do
+    pid = spawn(Neuron, :start, [organism_pid])
   end
 
-  def loop(mapper_pid) do
+  def start(organism_pid) do
     IO.puts "Neuron begin #{inspect self}"
 
     receive do
-      {^mapper_pid, {id, monitor_pid, af, w_input_pids, output_pids}} ->
-        loop(id, monitor_pid, af, w_input_pids,
-             w_input_pids, output_pids, 0)
+      {^organism_pid, {id, monitor_pid, af, w_input_pids, output_pids}} ->
+        loop(State.new(id: id,
+                       organism_pid: organism_pid,
+                       monitor_pid: monitor_pid,
+                       af: af,
+                       w_input_pids: w_input_pids,
+                       output_pids: output_pids),
+             w_input_pids, 0)
     end
   end
 
-  def loop(id, mapper_pid, af, [{:bias, bias}],
-            all_w_input_pids, output_pids, acc) do
+  def loop(s, [{:bias, bias}], acc) do
     #output = Neuron.af(acc + bias)
-    output = case af do
+    output = case s.af do
       :tanh -> tanh(acc + bias)
     end
-    map output_pids, fn pid ->
+    map s.output_pids, fn pid ->
       pid <- {self, :forward, [output]}
     end
 
-    loop(id, mapper_pid, af, all_w_input_pids,
-         all_w_input_pids, output_pids, 0)
+    loop(s, s.w_input_pids, 0)
   end
 
-  def loop(id, monitor_pid, af, [{input_pid, weights} | w_input_pids],
-            all_w_input_pids, output_pids, acc) do
+  def loop(s, [{input_pid, weights} | w_input_pids], acc) do
+    monitor_pid = s.monitor_pid
+
     receive do
       {^input_pid, :forward, input} ->
         result = dot(input, weights)
-        loop(id, monitor_pid, af, w_input_pids,
-             all_w_input_pids, output_pids, acc + result)
+        loop(s, w_input_pids, acc + result)
 
       {^monitor_pid, :get_state} ->
-        monitor_pid <- {self, id, all_w_input_pids}
+        monitor_pid <- {self, s.id, s.w_input_pids}
 
       {^monitor_pid, :terminate} ->
         :ok
