@@ -1,6 +1,6 @@
 defmodule Trainer do
   def default_fitness_target, do: :inf
-  def default_max_attempts, do: 30
+  def default_max_attempts, do: 20
   def default_max_evals, do: :inf
 
   def create(morphology, hidden_layer_densities) do
@@ -23,20 +23,20 @@ defmodule Trainer do
   when num_attempts >= max_attempts or
        num_evals >= max_evals or
        best_fitness >= fitness_target do
-         #Genotype.print(best_genotype)
+    Genotype.print(best_genotype)
 
-    genotype = Genotype.load(best_genotype)
-    [monitor] = Enum.filter(:ets.tab2list(genotype), fn o ->
-      case o.id do
-        {:monitor, _} -> true
-        _ ->  false
-      end
-    end)
-    a = Genotype.read(genotype, Enum.first(monitor.actuator_ids))
-    a = a.f :pts
-    Genotype.write(genotype, a)
-    Genotype.save(genotype, :out)
-    Organism.map(:out)
+   # genotype = Genotype.load(best_genotype)
+   # [monitor] = Enum.filter(:ets.tab2list(genotype), fn o ->
+   #   case o.id do
+   #     {:monitor, _} -> true
+   #     _ ->  false
+   #   end
+   # end)
+   # a = Genotype.read(genotype, Enum.first(monitor.actuator_ids))
+   # a = a.f :pts
+   # Genotype.write(genotype, a)
+   # Genotype.save(genotype, :out)
+   # Organism.map(:out)
 
     IO.puts "Morphology #{morphology}, best fitness #{best_fitness}, num evals #{num_evals}"
   end
