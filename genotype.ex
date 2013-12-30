@@ -2,13 +2,19 @@ defmodule Genotype do
   import Enum
 
   defrecord Neuron, id: nil, monitor_id: nil, af: :tanh, w_input_ids: [], output_ids: []
-  defrecord Sensor, id: nil, monitor_id: nil, f: nil, vl: [], output_ids: []
-  defrecord Actuator, id: nil, monitor_id: nil, f: nil, vl: [], input_ids: []
+  defrecord Sensor, id: nil, monitor_id: nil, f: nil, scape: nil, vl: [], output_ids: []
+  defrecord Actuator, id: nil, monitor_id: nil, f: nil, scape: nil, vl: [], input_ids: []
   defrecord Monitor, id: nil, sensor_ids: [], actuator_ids: [], neuron_ids: []
 
-  def create(sensor_fs, actuator_fs, hidden_layer_densities) do
-    sensors = map(sensor_fs, &create_sensor/1) 
-    actuators = map(actuator_fs, &create_actuator/1)
+  def create(morphology, hidden_layer_densities) do
+    #sensors = map(sensor_fs, &create_sensor/1) 
+    #actuators = map(actuator_fs, &create_actuator/1)
+
+    {a, b, c} = :erlang.now()
+    :random.seed(a, b, c)
+
+    sensors = apply(Genotype, morphology, [:sensors])
+    actuators = apply(Genotype, morphology, [:actuators])
 
     sensor = first(sensors)
     actuator = first(actuators)
@@ -36,7 +42,7 @@ defmodule Genotype do
   end
 
   def save(genotype, file_name) when is_list(genotype) do
-    table_id = :ets.new(file_name, [:public, :set, {:keypos, 1}])
+    table_id = :ets.new(file_name, [:public, :set, {:keypos, 2}])
     map(genotype, fn x -> :ets.insert(table_id, x) end)
     :ets.tab2file(table_id, file_name)
   end
@@ -152,5 +158,20 @@ defmodule Genotype do
 
   def generate_ids(n) do
     map(:lists.seq(1, n), fn _ -> generate_id() end)
+  end
+
+  # Random morphologies, will be moved somewhere else at some point
+  def xor_mimic(:sensors) do
+    [Sensor.new(id: {:sensor, generate_id()},
+                f: :xor_get_input,
+                scape: {:private, :xor_sim},
+                vl: 2)]
+  end
+
+  def xor_mimic(:actuators) do
+    [Actuator.new(id: {:actuator, generate_id()},
+                  f: :xor_send_output,
+                  scape: {:private, :xor_sim},
+                  vl: 1)]
   end
 end
