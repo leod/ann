@@ -1,18 +1,19 @@
 defmodule Actuator do
-  defrecord State, id: nil, monitor_pid: nil, f: nil, input_pids: nil
+  defrecord State, id: nil, monitor_pid: nil, f: nil, scape: nil, input_pids: nil
 
   def create(organism_pid) do
     spawn(Actuator, :start, [organism_pid])
   end
 
   def start(organism_pid) do
-    IO.puts "Actuator begin #{inspect self}"
+    #IO.puts "Actuator begin #{inspect self}"
 
     receive do
-      {^organism_pid, {id, monitor_pid, f, input_pids}} ->
+      {^organism_pid, {id, monitor_pid, f, scape, input_pids}} ->
         loop(State.new(id: id,
                        monitor_pid: monitor_pid,
                        f: f,
+                       scape: scape,
                        input_pids: input_pids),
              input_pids, [])
     end
@@ -31,16 +32,22 @@ defmodule Actuator do
   end
 
   def loop(s, [], acc) do
-    #Actuator.f(Enum.reverse(acc))
-    case s.f do
-      :pts -> pts(Enum.reverse(acc))
-    end
+    {fitness, halt_flag} = apply(Actuator, s.f, [Enum.reverse(acc), s.scape])
 
-    s.monitor_pid <- {self, :sync}
+    #:timer.sleep(1000)
+    s.monitor_pid <- {self, :sync, fitness, halt_flag}
     loop(s, s.input_pids, [])
   end
 
-  def pts(result) do
-    :io.format("Actuator result: ~p~n", [result])
+  def pts(output, _) do
+    :io.format("Actuator result: ~p~n", [output])
+  end
+
+  def xor_send_output(output, scape) do
+    scape <- {self, :act, output}
+    receive do
+      {scape, fitness, halt_flag} ->
+        {fitness, halt_flag}
+    end
   end
 end
