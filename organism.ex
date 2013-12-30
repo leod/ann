@@ -14,7 +14,7 @@ defmodule Organism do
     {a, b, c} = :erlang.now()
     :random.seed(a, b, c)
 
-    IO.puts "Organism begin #{inspect self}"
+    IO.puts "Organism begin #{inspect self} with file #{file_name}"
 
     ids_to_pids = :ets.new(:ids_to_pids, [:set, :private])
 
@@ -83,7 +83,7 @@ defmodule Organism do
         end
 
         # Continue training
-        if new_attempt < 1000 do
+        if new_attempt < 500 do
           # Apply random perturbations to a random set of neurons
           num_neurons = length(s.neuron_pids)
           p = 1 / :math.sqrt(num_neurons)
@@ -100,7 +100,9 @@ defmodule Organism do
 
           new_s = s.perturbed_neuron_pids perturbed_neuron_pids
 
-          loop(s, new_highest_fitness, eval_acc + 1, cycle_acc + cycles,
+          #:timer.sleep(5000)
+
+          loop(new_s, new_highest_fitness, eval_acc + 1, cycle_acc + cycles,
                time_acc + time, new_attempt)
         else # Done training
           new_cycle_acc = cycle_acc + cycles
@@ -111,12 +113,23 @@ defmodule Organism do
           update_genotype(s.ids_to_pids, s.genotype, new_weights)
           Genotype.save(s.genotype, s.file_name)
 
+          # Debugging
+          Enum.map s.actuator_pids, fn pid -> pid <- {self, :enable_trace} end
+          s.monitor_pid <- {self, :reactivate}
+
+          receive do
+            {^monitor_pid, :completed, _, _, _} -> :ok
+          end
+
           s.monitor_pid <- {self, :terminate}
           Enum.map s.scape_pids, fn pid -> pid <- {self, :terminate} end
 
           IO.puts "Organism finished training: Fitness: #{inspect new_highest_fitness}, num cycles: #{new_cycle_acc}, time: #{inspect new_time_acc}, num evals: #{eval_acc}"
 
           Process.whereis(:trainer) <- {self, highest_fitness, eval_acc, cycle_acc, time_acc}
+
+          :ets.delete(s.ids_to_pids)
+
         end
     end
   end

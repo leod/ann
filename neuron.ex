@@ -32,7 +32,7 @@ defmodule Neuron do
   def loop(s, [{:bias, bias}], acc) do
     #output = Neuron.af(acc + bias)
     output = case s.af do
-      :tanh -> tanh(acc + bias)
+      :tanh -> :math.tanh(acc + bias)
     end
     map s.output_pids, fn pid ->
       pid <- {self, :forward, [output]}
@@ -60,9 +60,6 @@ defmodule Neuron do
 
       {^organism_pid, :weights_perturb} ->
         new_w_input_pids = perturb_input(s.w_input_pids)
-        a = Enum.map s.w_input_pids, fn {pid, w} -> w end
-        b = Enum.map new_w_input_pids, fn {pid, w} -> w end
-        #IO.puts "Neuron #{inspect self} perturbed: #{inspect a} -> #{inspect b}"
         loop(s.w_input_pids(new_w_input_pids), new_w_input_pids, acc)
 
       {from, :get_state} ->
@@ -70,13 +67,16 @@ defmodule Neuron do
         loop(s, [{input_pid, weights} | w_input_pids], acc)
 
       {^monitor_pid, :terminate} ->
+        #IO.puts "terminate #{inspect s.w_input_pids}"
         :ok
     end
   end
 
   def tanh(x), do: :math.tanh(x)
 
-  def dot(a, b), do: zip(a, b) |> reduce(0, fn {x, y}, acc -> acc + x * y end)
+  def dot(a, b) when length(a) == length(b) do
+    zip(a, b) |> reduce(0, fn {x, y}, acc -> acc + x * y end)
+  end
 
   def perturb_input(w_input_pids) do
     num_weights = :lists.sum(map(w_input_pids, fn
@@ -88,7 +88,7 @@ defmodule Neuron do
     map(w_input_pids, fn
       {:bias, bias} ->
         if :random.uniform() < p do
-          {:bias, sat(:random.uniform() - 0.5 * delta_multiplier + bias,
+          {:bias, sat((:random.uniform() - 0.5) * delta_multiplier + bias,
                       -sat_limit, sat_limit)}
         else
           {:bias, bias}
@@ -102,7 +102,7 @@ defmodule Neuron do
   def perturb_weights(weights, p) do
     map(weights, fn w ->
       if :random.uniform() < p do
-        sat(:random.uniform() - 0.5 * delta_multiplier + w,
+        sat((:random.uniform() - 0.5) * delta_multiplier + w,
             -sat_limit, sat_limit)
       else
         w

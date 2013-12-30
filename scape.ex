@@ -49,11 +49,11 @@ defmodule Scape do
     end
   end
 
-  defp list_compare(a, b) do
-
+  defp list_compare(a, b)
+  when length(a) == length(b) do
     x = Enum.zip(a, b)
     |> Enum.reduce(0, fn {x, y}, e -> e + :math.pow(x - y, 2) end)
-    |> :math.sqrt
+    |> :math.sqrt()
 
     #IO.puts "XOR compare #{inspect a} with #{inspect b} => #{x}"
     x
