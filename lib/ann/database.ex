@@ -47,7 +47,7 @@ defmodule Database do
     :mnesia.write(r)
   end
 
-  def delete(table_and_key), do: :mnesia.delete(table_and_key)
+  def delete(key), do: :mnesia.delete({elem(key, 0), key})
 
   def print(organism_id) do
     organism = read(organism_id)
@@ -155,22 +155,31 @@ defmodule Database do
     species_constraint = Genotype.Constraint.new
 
     :mnesia.transaction fn ->
-      Genotype.generate_genotype(organism_id, species_id, species_constraint)
-      |> Database.write
-    end
+      Genotype.generate(organism_id, species_id, species_constraint)
+      |> write
 
-    :mnesia.transaction fn ->
-      Database.clone_organism(organism_id, clone_organism_id)
-    end
+      clone_organism(organism_id, clone_organism_id)
 
-    :mnesia.transaction fn ->
       print(organism_id)
-      IO.puts "-----------"
       print(clone_organism_id)
 
       delete_organism(organism_id)
-      #delete_organism(clone_organism_id)
+      delete_organism(clone_organism_id)
     end
+  end
 
+  def create_test_organism() do
+    :mnesia.transaction fn ->
+      organism_id = {Genotype.Organism, :test}
+      species_id = {Genotype.Species, :test_species}
+      species_constraint = Genotype.Constraint.new
+
+      if try_read(organism_id) != nil, do: delete_organism(organism_id)
+
+      Genotype.generate(organism_id, species_id, species_constraint)
+      |> write
+
+      print(organism_id)
+    end
   end
 end
