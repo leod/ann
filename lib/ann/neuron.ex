@@ -4,8 +4,7 @@ defmodule Neuron do
   def delta_multiplier, do: :math.pi() * 2
   def sat_limit, do: :math.pi() * 2
 
-  defrecord State, id: nil, organism_pid: nil, monitor_pid: nil, af: nil, w_input_pids: nil, output_pids: nil,
-                   w_input_pids_backup: nil
+  defrecord State, id: nil, organism_pid: nil, monitor_pid: nil, af: nil, w_input_pids: nil, output_pids: nil, w_input_pids_backup: nil, ro_pids: nil
 
   def create(organism_pid) do
     pid = spawn(Neuron, :start, [organism_pid])
@@ -18,25 +17,23 @@ defmodule Neuron do
     :random.seed(a, b, c)
 
     receive do
-      {^organism_pid, {id, monitor_pid, af, w_input_pids, output_pids}} ->
+      {^organism_pid, {id, monitor_pid, af, w_input_pids, output_pids, ro_pids}} ->
+        {self, :forward, 0} |> send(ro_pids)         
+
         loop(State.new(id: id,
                        organism_pid: organism_pid,
                        monitor_pid: monitor_pid,
                        af: af,
                        w_input_pids: w_input_pids,
-                       output_pids: output_pids),
+                       output_pids: output_pids,
+                       ro_pids: ro_pids),
              w_input_pids, 0)
     end
   end
 
   def loop(s, [{:bias, bias}], acc) do
-    #output = Neuron.af(acc + bias)
-    output = case s.af do
-      :tanh -> :math.tanh(acc + bias)
-    end
-    map s.output_pids, fn pid ->
-      pid <- {self, :forward, [output]}
-    end
+    output = apply(Neuron, s.af, [acc + bias]
+    {self, :forward, [output]} |> send(s.output_pids)
 
     loop(s, s.w_input_pids, 0)
   end
@@ -66,8 +63,17 @@ defmodule Neuron do
         from <- {self, s.id, s.w_input_pids}
         loop(s, [{input_pid, weights} | w_input_pids], acc)
 
+      {^organism_pid, :prepare_reactivate} ->
+        # Get rid of incoming messages from recurrent connections
+        flush()
+        organism_pid <- {self, :ready}
+        receive do
+          {^organism_pid, :reactivate} ->
+            {self, :forward, 0} |> send(ro_pids)         
+            loop(s, s.w_input_pids, 0)
+        end
+
       {^monitor_pid, :terminate} ->
-        #IO.puts "terminate #{inspect s.w_input_pids}"
         :ok
     end
   end
@@ -85,7 +91,7 @@ defmodule Neuron do
     end))
     p = 1 / :math.sqrt(num_weights)
 
-    map(w_input_pids, fn
+    map w_input_pids, fn
       {:bias, bias} ->
         if :random.uniform() < p do
           {:bias, sat((:random.uniform() - 0.5) * delta_multiplier + bias,
@@ -96,18 +102,18 @@ defmodule Neuron do
 
       {input_pid, weights} ->
         {input_pid, perturb_weights(weights, p)}
-    end)
+    end
   end
 
   def perturb_weights(weights, p) do
-    map(weights, fn w ->
+    map weights, fn w ->
       if :random.uniform() < p do
         sat((:random.uniform() - 0.5) * delta_multiplier + w,
             -sat_limit, sat_limit)
       else
         w
       end
-    end)
+    end
   end
 
   def sat(x, min, max) do
@@ -116,5 +122,9 @@ defmodule Neuron do
       x > max -> max
       true -> x
     end
+  end
+
+  def send(pids, message) do
+    map pids, fn pid -> pid <- message end
   end
 end
