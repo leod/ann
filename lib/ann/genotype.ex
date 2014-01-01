@@ -48,6 +48,9 @@ defmodule Genotype do
                         morphologies: [],
                         innovation_factor: 0
 
+  def is_id({type, _}, type), do: true
+  def is_id(_, _), do: false
+
   def generate(organism_id, species_id, species_constraint) do
     :random.seed(:erlang.now())
 
