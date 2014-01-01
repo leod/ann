@@ -47,12 +47,18 @@ defmodule Database do
     :mnesia.write(r)
   end
 
+  def update(key, f) do
+    v = read(key)
+    write(f.(v))
+  end
+
   def delete(key), do: :mnesia.delete({elem(key, 0), key})
 
   def print(organism_id) do
     organism = read(organism_id)
     monitor = read(organism.monitor_id)
 
+    IO.inspect organism
     IO.inspect monitor
     map monitor.sensor_ids, fn id -> IO.inspect id; IO.inspect(read(id)) end
     map monitor.neuron_ids, fn id -> IO.inspect(read(id)) end

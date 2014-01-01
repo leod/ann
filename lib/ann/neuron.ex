@@ -32,7 +32,7 @@ defmodule Neuron do
   end
 
   def loop(s, [{:bias, bias}], acc) do
-    output = apply(Neuron, s.af, [acc + bias]
+    output = apply(Neuron, s.af, [acc + bias])
     {self, :forward, [output]} |> send(s.output_pids)
 
     loop(s, s.w_input_pids, 0)
@@ -69,7 +69,7 @@ defmodule Neuron do
         organism_pid <- {self, :ready}
         receive do
           {^organism_pid, :reactivate} ->
-            {self, :forward, 0} |> send(ro_pids)         
+            #{self, :forward, 0} |> send(ro_pids)         
             loop(s, s.w_input_pids, 0)
         end
 
@@ -126,5 +126,12 @@ defmodule Neuron do
 
   def send(pids, message) do
     map pids, fn pid -> pid <- message end
+  end
+
+  def flush() do
+    receive do
+      _ -> flush()
+      after 0 -> :ok
+    end
   end
 end
