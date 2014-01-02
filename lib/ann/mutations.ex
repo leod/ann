@@ -1,6 +1,62 @@
 defmodule Mutations do
   import Genotype
 
+  def mutators, do:
+    [:mutate_weights,
+     :add_bias,
+     :remove_bias,
+     :add_neuron_outlink,
+     :add_neuron_inlink,
+     :add_sensor_outlink,
+     :add_actuator_inlink,
+     :outsplice,
+     :add_sensor,
+     :add_actuator]
+
+  def mutate(organism_id) do
+    :random.seed(:erlang.now())
+    
+    :mnesia.transaction fn ->
+      Database.update(organism_id, fn o -> o.generation(o.generation + 1) end)
+      apply_mutators(organism_id) 
+    end
+  end
+
+  def apply_mutators(organism_id) do
+    organism = Database.read(organism_id)
+    monitor = Database.read(organism.monitor_id)
+
+    num_neurons = length(monitor.neuron_ids)
+    num_mutations = :math.pow(num_neurons, 0.5)
+                    |> :erlang.round
+                    |> :random.uniform
+                    |> :erlang.round
+
+    IO.puts "Number of neurons: #{num_neurons}, performing #{num_mutations} on #{inspect organism_id}"
+
+    apply_mutators(organism_id, num_mutations)
+  end
+
+  def apply_mutators(_, 0), do: :ok
+
+  def apply_mutators(organism_id, i) do
+    result = :mnesia.transaction fn ->
+      mutator = pick(mutators)
+      IO.puts "Mutator #{inspect mutator}"
+
+      apply(Mutations, mutator, [organism_id])
+    end
+
+    case result do
+      {:atomic, _} ->
+        apply_mutators(organism_id, i-1)
+      error ->
+        IO.puts "Error: #{inspect error}, reapplying mutation"
+        apply_mutators(organism_id, i)
+    end
+  end
+
+  # Mutation functions
   def mutate_weights(organism_id) do
     organism = Database.read(organism_id)
     monitor = Database.read(organism.monitor_id)
@@ -8,6 +64,8 @@ defmodule Mutations do
     neuron_id = pick(monitor.neuron_ids)
     neuron = Database.read(neuron_id)
 
+    #IO.inspect neuron.w_input_ids
+    #IO.inspect neuron
     w_input_ids = Neuron.perturb_input(neuron.w_input_ids)
     history = [{:mutate_weights, neuron_id} | organism.history]
 
@@ -22,9 +80,8 @@ defmodule Mutations do
     neuron_id = pick(monitor.neuron_ids)
     neuron = Database.read(neuron_id)
 
-    IO.inspect neuron.w_input_ids
     if not List.keymember?(neuron.w_input_ids, :bias, 0) do
-      bias = {:bias, [:random.uniform() - 0.5]}
+      bias = {:bias, :random.uniform() - 0.5}
       neuron.w_input_ids(neuron.w_input_ids ++ [bias])
             .generation(organism.generation)
       |> Database.write
@@ -32,7 +89,7 @@ defmodule Mutations do
       history = [{:add_bias, neuron_id} | organism.history]
       organism.history(history) |> Database.write
     else
-      raise "Already has bias!"
+      exit("Already has bias!")
     end
   end
 
@@ -42,7 +99,6 @@ defmodule Mutations do
 
     neuron_id = pick(monitor.neuron_ids)
     neuron = Database.read(neuron_id)
-    IO.inspect neuron
 
     if List.keymember?(neuron.w_input_ids, :bias, 0) do
       w_input_ids = List.keydelete(neuron.w_input_ids, :bias, 0)
@@ -53,7 +109,7 @@ defmodule Mutations do
       history = [{:remove_bias, neuron_id} | organism.history]
       organism.history(history) |> Database.write
     else
-      raise "Already has bias!"
+      exit("Already has bias!")
     end
   end
 
@@ -79,12 +135,12 @@ defmodule Mutations do
     neuron_id = pick(monitor.neuron_ids)
     neuron = Database.read(neuron_id)
 
-    {input_ids, _} = List.unzip(neuron.w_input_ids)
+    [input_ids, _] = List.unzip(neuron.w_input_ids)
     case (monitor.neuron_ids ++ monitor.sensor_ids) -- input_ids do
       [] ->
-        raise "Neuron already fully connected!"
+        exit("Neuron already fully connected!")
       ids ->
-        do_link(organism, pick(ids), neuron_id)
+        do_link(organism_id, pick(ids), neuron_id)
 
         history = [{:add_neuron_inlink, neuron_id} | organism.history]
         organism.history(history) |> Database.write
@@ -98,12 +154,11 @@ defmodule Mutations do
     neuron_id = pick(monitor.neuron_ids)
     neuron = Database.read(neuron_id)
 
-    {input_ids, _} = List.unzip(neuron.w_input_ids)
-    case (monitor.neuron_ids ++ monitor.actuator_ids) -- input_ids do
+    case (monitor.neuron_ids ++ monitor.actuator_ids) -- neuron.output_ids do
       [] ->
-        raise "Neuron already fully connected!"
+        exit("Neuron already fully connected!")
       ids ->
-        do_link(organism, neuron_id, pick(ids))
+        do_link(organism_id, neuron_id, pick(ids))
 
         history = [{:add_neuron_outlink, neuron_id} | organism.history]
         organism.history(history) |> Database.write
@@ -119,7 +174,7 @@ defmodule Mutations do
 
     case monitor.neuron_ids -- sensor.output_ids do
       [] ->
-        raise "Sensor already fully connected!" 
+        exit("Sensor already fully connected!" )
       ids ->
         do_link(organism_id, sensor_id, pick(ids))
 
@@ -137,7 +192,7 @@ defmodule Mutations do
 
     case monitor.neuron_ids -- actuator.input_ids do
       [] ->
-        raise "Sensor already fully connected!" 
+        exit("Sensor already fully connected!" )
       ids ->
         do_link(organism_id, pick(ids), actuator_id)
 
@@ -184,7 +239,7 @@ defmodule Mutations do
                          target_layer > layer,
                          do: target_id
     if pool_output_ids == [], do:
-      raise "Empty output pool"
+      exit("Empty output pool")
     {_, {output_layer, _}} = output_id = pick(pool_output_ids)
 
     new_layer = get_splice_layer(organism.pattern, layer, output_layer, :next)
@@ -218,15 +273,16 @@ defmodule Mutations do
     
     used_sensors = Enum.map monitor.sensor_ids, fn id ->
       Database.read(id)
-        .id(nil).monitor_id(nil).output_ids([])
+        .id(nil).monitor_id(nil).output_ids([]).generation(0)
     end
-    pool_sensors = Morphology.get_sensors(organism.morphology) -- used_sensors
+    pool_sensors = Morphology.get_sensors(organism.constraint.morphology)
+                   -- used_sensors
     if pool_sensors == [], do:
-      raise "All sensors already used!"
+      exit("All sensors already used!")
 
     new_sensor_id = {Genotype.Sensor, {-1, Genotype.generate_id()}}
-    new_sensor = pick(pool_sensors).id(new_sensor_id)
-                                   .monitor_id(organism.monitor_id)
+    pick(pool_sensors).id(new_sensor_id)
+                      .monitor_id(organism.monitor_id)
     |> Database.write
     
     neuron_id = pick(monitor.neuron_ids)
@@ -243,15 +299,16 @@ defmodule Mutations do
   
     used_actuators = Enum.map monitor.actuator_ids, fn id ->
       Database.read(id)
-        .id(nil).monitor_id(nil).input_ids([])
+        .id(nil).monitor_id(nil).input_ids([]).generation(0)
     end
-    pool_actuators = Morphology.get_sensors(organism.morphology) -- used_actuators
+    pool_actuators = Morphology.get_actuators(organism.constraint.morphology)
+                     -- used_actuators
     if pool_actuators == [], do:
-      raise "All actuators already used!"
+      exit("All actuators already used!")
 
-    new_actuator_id = {Genotype.Sensor, {-1, Genotype.generate_id()}}
-    new_actuator = pick(pool_actuators).id(new_actuator_id)
-                                       .monitor_id(organism.monitor_id)
+    new_actuator_id = {Genotype.Actuator, {-1, Genotype.generate_id()}}
+    pick(pool_actuators).id(new_actuator_id)
+                        .monitor_id(organism.monitor_id)
     |> Database.write
     
     neuron_id = pick(monitor.neuron_ids)
@@ -298,7 +355,7 @@ defmodule Mutations do
                  .ro_ids(ro_ids)
                  .generation(generation)
     else
-      raise "Already member"
+      exit("Already member")
     end
   end
 
@@ -309,7 +366,7 @@ defmodule Mutations do
       from_sensor.output_ids(output_ids)
                  .generation(generation)
     else
-      raise "Already member"
+      exit("Already member")
     end
   end
 
@@ -322,7 +379,7 @@ defmodule Mutations do
       to_neuron.w_input_ids(w_input_ids)
                .generation(generation)
     else
-      raise "Already member"
+      exit("Already member")
     end
   end
 
@@ -333,7 +390,7 @@ defmodule Mutations do
       to_actuator.input_ids(input_ids)
                  .generation(generation)
     else
-      raise "Already member!"
+      exit("Already member!")
     end
   end
 
@@ -344,7 +401,7 @@ defmodule Mutations do
                  .ro_ids(from_neuron.ro_ids -- [to_id])
                  .generation(generation)
     else
-      raise "Not a member!"
+      exit("Not a member!")
     end
   end
 
@@ -354,7 +411,7 @@ defmodule Mutations do
       from_sensor.output_ids(from_sensor.output_ids -- [to_id])
                  .generation(generation)
     else
-      raise "Not a member!"
+      exit("Not a member!")
     end
   end
 
@@ -365,7 +422,7 @@ defmodule Mutations do
       to_neuron.w_input_ids(w_input_ids)
                .generation(generation)
     else
-      raise "Not a member!" 
+      exit("Not a member!" )
     end
   end
 
@@ -375,7 +432,7 @@ defmodule Mutations do
       to_actuator.input_ids(to_actuator.input_ids -- [from_id])
                  .generation(generation)
     else
-      raise "Not a member!"
+      exit("Not a member!")
     end
   end
 
