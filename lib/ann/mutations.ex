@@ -187,10 +187,6 @@ defmodule Mutations do
       raise "Empty output pool"
     {_, {output_layer, _}} = output_id = pick(pool_output_ids)
 
-    IO.inspect layer
-    IO.inspect output_layer
-    IO.inspect organism.pattern
-
     new_layer = get_splice_layer(organism.pattern, layer, output_layer, :next)
     new_neuron_id = {Genotype.Neuron, {new_layer, Genotype.generate_id()}}
     Genotype.generate_neuron(new_neuron_id, organism.monitor_id, organism.generation,
@@ -214,6 +210,56 @@ defmodule Mutations do
     history = [{:outsplice, neuron_id, new_neuron_id, output_id} | organism.history]
     organism.history(history).pattern(pattern) |> Database.write
     monitor.neuron_ids([new_neuron_id | monitor.neuron_ids]) |> Database.write
+  end
+
+  def add_sensor(organism_id) do
+    organism = Database.read(organism_id)
+    monitor = Database.read(organism.monitor_id)
+    
+    used_sensors = Enum.map monitor.sensor_ids, fn id ->
+      Database.read(id)
+        .id(nil).monitor_id(nil).output_ids([])
+    end
+    pool_sensors = Morphology.get_sensors(organism.morphology) -- used_sensors
+    if pool_sensors == [], do:
+      raise "All sensors already used!"
+
+    new_sensor_id = {Genotype.Sensor, {-1, Genotype.generate_id()}}
+    new_sensor = pick(pool_sensors).id(new_sensor_id)
+                                   .monitor_id(organism.monitor_id)
+    |> Database.write
+    
+    neuron_id = pick(monitor.neuron_ids)
+    do_link(organism_id, new_sensor_id, neuron_id)
+    
+    history = [{:add_sensor, new_sensor_id, neuron_id} | organism.history]
+    organism.history(history) |> Database.write
+    monitor.sensor_ids([new_sensor_id | monitor.sensor_ids]) |> Database.write
+  end 
+
+  def add_actuator(organism_id) do
+    organism = Database.read(organism_id)
+    monitor = Database.read(organism.monitor_id)
+  
+    used_actuators = Enum.map monitor.actuator_ids, fn id ->
+      Database.read(id)
+        .id(nil).monitor_id(nil).input_ids([])
+    end
+    pool_actuators = Morphology.get_sensors(organism.morphology) -- used_actuators
+    if pool_actuators == [], do:
+      raise "All actuators already used!"
+
+    new_actuator_id = {Genotype.Sensor, {-1, Genotype.generate_id()}}
+    new_actuator = pick(pool_actuators).id(new_actuator_id)
+                                       .monitor_id(organism.monitor_id)
+    |> Database.write
+    
+    neuron_id = pick(monitor.neuron_ids)
+    do_link(organism_id, neuron_id, new_actuator_id)
+    
+    history = [{:add_actuator, new_actuator_id, neuron_id} | organism.history]
+    organism.history(history) |> Database.write
+    monitor.actuator_ids([new_actuator_id | monitor.actuator_ids]) |> Database.write
   end
 
   # Utility functions:

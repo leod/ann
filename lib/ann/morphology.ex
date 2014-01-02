@@ -8,4 +8,14 @@ defmodule Morphology do
     [Genotype.Actuator.new(f: :pts, vl: 3),
      Genotype.Actuator.new(f: :pts, vl: 1)]
   end
+
+  def get_sensors([]) do
+    [Genotype.Sensor.new(f: :rng, vl: 2),
+     Genotype.Sensor.new(f: :rng, vl: 3)]
+  end
+
+  def get_actuators([]) do
+    [Genotype.Actuator.new(f: :pts, vl: 3),
+     Genotype.Actuator.new(f: :pts, vl: 1)]
+  end
 end
