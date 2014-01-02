@@ -81,6 +81,16 @@ defmodule Database do
     end
   end
 
+  def delete_species(species_id) do
+    map Database.read(species_id).organism_ids, &delete_organism(&1)
+    delete(species_id)
+  end
+  
+  def delete_population(population_id) do
+    map Database.read(population_id).species_ids, &delete_species(&1)
+    delete(population_id)
+  end
+
   def clone_organism(organism_id, clone_organism_id) do
     :mnesia.transaction fn ->
       id_map = :ets.new(:id_map, [:set, :private])

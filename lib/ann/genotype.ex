@@ -39,7 +39,8 @@ defmodule Genotype do
                       pattern: []
   defrecord Species, id: nil,
                      platform_id: nil,
-                     species_ids: [],
+                     organism_ids: [],
+                     champion_ids: [],
                      morphologies: [],
                      innovation_factor: 0
   defrecord Constraint, morphology: [],
