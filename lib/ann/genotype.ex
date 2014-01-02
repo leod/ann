@@ -3,6 +3,7 @@ defmodule Genotype do
 
   defrecord Sensor, id: nil,
                     monitor_id: nil,
+                    generation: 0,
                     f: nil,
                     scape: nil,
                     vl: [],
@@ -16,6 +17,7 @@ defmodule Genotype do
                     ro_ids: []
   defrecord Actuator, id: nil,
                       monitor_id: nil,
+                      generation: 0,
                       f: nil,
                       scape: nil,
                       vl: [],

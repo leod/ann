@@ -49,7 +49,9 @@ defmodule Database do
 
   def update(key, f) do
     v = read(key)
-    write(f.(v))
+    new_v = f.(v)
+    write(new_v)
+    new_v 
   end
 
   def delete(key), do: :mnesia.delete({elem(key, 0), key})
@@ -174,7 +176,7 @@ defmodule Database do
     end
   end
 
-  def create_test_organism() do
+  def create_test() do
     :mnesia.transaction fn ->
       organism_id = {Genotype.Organism, :test}
       species_id = {Genotype.Species, :test_species}
@@ -187,5 +189,13 @@ defmodule Database do
 
       print(organism_id)
     end
+  end
+
+  def print_test() do
+    start()
+
+    :mnesia.transaction fn ->
+      print({Genotype.Organism, :test})
+    end 
   end
 end

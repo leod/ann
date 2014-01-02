@@ -146,10 +146,97 @@ defmodule Mutations do
     end
   end
 
+  def add_neuron(organism_id) do
+    organism = Database.read(organism_id)
+    monitor = Database.read(organism.monitor_id)
+
+    {target_layer, target_neuron_ids} = pick(organism.pattern)
+    new_neuron_id = {Genotype.Neuron, {target_layer, Genotype.generate_id()}}
+    Genotype.generate_neuron(new_neuron_id, monitor.id, organism.generation,
+                             organism.constraint, [], [])
+    |> Database.write
+    
+    from_id = pick(monitor.neuron_ids ++ monitor.sensor_ids)
+    do_link(organism_id, from_id, new_neuron_id)
+    to_id = pick(monitor.neuron_ids ++ monitor.actuator_ids)
+    do_link(organism_id, new_neuron_id, to_id)
+
+    history = [{:add_neuron, new_neuron_id, from_id, to_id} | organism.history] 
+    pattern = List.keyreplace(organism.pattern, target_layer, 0,
+                              [new_neuron_id | target_neuron_ids])
+    organism.history(history)
+            .pattern(pattern) |> Database.write
+    monitor.neuron_ids([new_neuron_id | monitor.neuron_ids])
+    |> Database.write
+  end
+
+  # Insert a new random inbetween two randomly chosen neurons.
+  # Creates a new layer between the two neurons if necessary.
+  def outsplice(organism_id) do
+    organism = Database.read(organism_id)
+    monitor = Database.read(organism.monitor_id)
+
+    #{Neuron, {layer, _}} = neuron_id = pick(monitor.neuron_ids)
+    neuron_id = pick(monitor.neuron_ids)
+    {Genotype.Neuron, {layer, _}} = neuron_id
+    neuron = Database.read(neuron_id)
+    pool_output_ids = lc target_id={_, {target_layer, _}} inlist neuron.output_ids,
+                         target_layer > layer,
+                         do: target_id
+    if pool_output_ids == [], do:
+      raise "Empty output pool"
+    {_, {output_layer, _}} = output_id = pick(pool_output_ids)
+
+    IO.inspect layer
+    IO.inspect output_layer
+    IO.inspect organism.pattern
+
+    new_layer = get_splice_layer(organism.pattern, layer, output_layer, :next)
+    new_neuron_id = {Genotype.Neuron, {new_layer, Genotype.generate_id()}}
+    Genotype.generate_neuron(new_neuron_id, organism.monitor_id, organism.generation,
+                             organism.constraint, [], [])
+    |> Database.write
+
+    pattern = if List.keymember?(organism.pattern, new_layer, 0) do
+      # Insert neuron into existing layer
+      {new_layer, neuron_ids} = List.keyfind(organism.pattern, new_layer, 0)
+      List.keyreplace(organism.pattern, new_layer, 0,
+                      {new_layer, [new_neuron_id | neuron_ids]})
+    else
+      # Insert new layer
+      Enum.sort([{new_layer, [new_neuron_id]} | organism.pattern])
+    end
+
+    do_cut_link(organism_id, neuron_id, output_id)
+    do_link(organism_id, neuron_id, new_neuron_id)
+    do_link(organism_id, new_neuron_id, output_id)
+
+    history = [{:outsplice, neuron_id, new_neuron_id, output_id} | organism.history]
+    organism.history(history).pattern(pattern) |> Database.write
+    monitor.neuron_ids([new_neuron_id | monitor.neuron_ids]) |> Database.write
+  end
+
   # Utility functions:
- 
+  def get_splice_layer(pattern, from_layer, to_layer, :next) do
+    get_next_layer(pattern, from_layer, to_layer)
+  end
+  #def get_new_layer(from_layer, to_layer, pattern, :previous) do
+    #get_next_layer(from_layer, to_layer, pattern)
+  #end
+
+  def get_next_layer([{from_layer, _}], from_layer, 1), do:
+    (from_layer + 1) / 2
+
+  def get_next_layer([{from_layer, _} | pattern], from_layer, to_layer) do
+    {next_layer, _} = Enum.first(pattern)
+    if next_layer == to_layer, do: (from_layer + to_layer) / 2 ,
+                               else: next_layer
+  end
+  def get_next_layer([_ | pattern], from_layer, to_layer), do:
+    get_next_layer(pattern, from_layer, to_layer) 
+
   def link_from(from_neuron, to_id, generation)
-  when is_record(from_neuron, Neuron) do
+  when is_record(from_neuron, Genotype.Neuron) do
     {_, {from_layer, _}} = from_neuron.id
     {_, {to_layer, _}} = to_id
 
@@ -170,7 +257,7 @@ defmodule Mutations do
   end
 
   def link_from(from_sensor, to_neuron_id, generation)
-  when is_record(from_sensor, Sensor) do
+  when is_record(from_sensor, Genotype.Sensor) do
     if not Enum.member?(from_sensor.output_ids, to_neuron_id) do
       output_ids = [to_neuron_id | from_sensor.output_ids]
       from_sensor.output_ids(output_ids)
@@ -181,7 +268,7 @@ defmodule Mutations do
   end
 
   def link_to(from_id, to_neuron, vl, generation)
-  when is_record(to_neuron, Neuron) do
+  when is_record(to_neuron, Genotype.Neuron) do
     if not List.keymember?(to_neuron.w_input_ids, from_id, 0) do
       weights = generate_neural_weights(vl)
       w_input_ids = [{from_id, weights} | to_neuron.w_input_ids]
@@ -193,8 +280,8 @@ defmodule Mutations do
     end
   end
 
-  def link_to(from_neuron_id, to_actuator, generation)
-  when is_record(to_actuator, Actuator) do
+  def link_to(from_neuron_id, to_actuator, 1, generation)
+  when is_record(to_actuator, Genotype.Actuator) do
     if not Enum.member?(to_actuator.input_ids, from_neuron_id) do
       input_ids = [from_neuron_id | to_actuator.input_ids]
       to_actuator.input_ids(input_ids)
@@ -205,7 +292,7 @@ defmodule Mutations do
   end
 
   def cut_link_from(from_neuron, to_id, generation)
-  when is_record(from_neuron, Neuron) do
+  when is_record(from_neuron, Genotype.Neuron) do
     if Enum.member?(from_neuron.output_ids, to_id) do
       from_neuron.output_ids(from_neuron.output_ids -- [to_id])
                  .ro_ids(from_neuron.ro_ids -- [to_id])
@@ -216,7 +303,7 @@ defmodule Mutations do
   end
 
   def cut_link_from(from_sensor, to_id, generation)
-  when is_record(from_sensor, Sensor) do
+  when is_record(from_sensor, Genotype.Sensor) do
     if Enum.member?(from_sensor.output_ids, to_id) do
       from_sensor.output_ids(from_sensor.output_ids -- [to_id])
                  .generation(generation)
@@ -226,7 +313,7 @@ defmodule Mutations do
   end
 
   def cut_link_to(from_id, to_neuron, generation)
-  when is_record(to_neuron, Neuron) do
+  when is_record(to_neuron, Genotype.Neuron) do
     if List.keymember?(to_neuron.w_input_ids, from_id, 0) do
       w_input_ids = List.keydelete(to_neuron.w_input_ids, from_id, 0)
       to_neuron.w_input_ids(w_input_ids)
@@ -237,9 +324,9 @@ defmodule Mutations do
   end
 
   def cut_link_to(from_id, to_actuator, generation)
-  when is_record(to_actuator, Actuator) do
+  when is_record(to_actuator, Genotype.Actuator) do
     if Enum.member?(to_actuator.input_ids, from_id) do
-      to_actuator.input_ids(to_actuator.input_ids ++ [from_id])
+      to_actuator.input_ids(to_actuator.input_ids -- [from_id])
                  .generation(generation)
     else
       raise "Not a member!"
@@ -251,8 +338,8 @@ defmodule Mutations do
 
     from = Database.update from_id, &link_from(&1, to_id, organism.generation)
     vl = cond do
-      is_record(from, Neuron) -> 1
-      is_record(from, Sensor) -> from.vl
+      is_record(from, Genotype.Neuron) -> 1
+      is_record(from, Genotype.Sensor) -> from.vl
     end
 
     Database.update to_id, &link_to(from_id, &1, vl, organism.generation)
