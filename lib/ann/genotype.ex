@@ -8,7 +8,7 @@ defmodule Genotype do
                     vl: [],
                     output_ids: []
   defrecord Neuron, id: nil,
-                    generations: 0,
+                    generation: 0,
                     monitor_id: nil,
                     af: :tanh,
                     w_input_ids: [],
@@ -25,7 +25,7 @@ defmodule Genotype do
                      actuator_ids: [],
                      neuron_ids: []
   defrecord Organism, id: nil,
-                      generations: 0,
+                      generation: 0,
                       population_id: nil,
                       species_id: nil,
                       monitor_id: nil,
