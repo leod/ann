@@ -1,50 +1,43 @@
 defmodule Organism do
   import Genotype
 
-  defrecord State, file_name: nil, genotype: nil, ids_to_pids: nil, monitor_pid: nil,
-                   sensor_pids: nil, neuron_pids: nil, actuator_pids: nil, scape_pids: nil,
+  @max_attempts 50
+
+  defrecord State, organism_id: nil, population_pid: nil, ids_to_pids: nil,
+                   monitor_pid: nil, sensor_pids: nil, neuron_pids: nil,
+                   actuator_pids: nil, scape_pids: nil,
                    perturbed_neuron_pids: []
 
-  def map(file_name) do
-    genotype = Genotype.load(file_name)
-    spawn_link(Organism, :map, [file_name, genotype])
+  def start(organism_id, population_pid) do
+    spawn(Organism, :init, [organism_id, population_pid])
   end
 
-  def map(file_name, genotype) do
-    {a, b, c} = :erlang.now()
-    :random.seed(a, b, c)
+  def init(organism_id, population_pid) do
+    :random.seed(:erlang.now())
 
-    IO.puts "Organism begin #{inspect self} with file #{file_name}"
+    IO.puts "Organism begin #{inspect self}, id #{inspect organism_id}"
 
     ids_to_pids = :ets.new(:ids_to_pids, [:set, :private])
 
-    # Temp hack
-    [monitor] = Enum.filter(:ets.tab2list(genotype), fn o ->
-      case o.id do
-        {:monitor, _} -> true
-        _ ->  false
-      end
-    end)
+    organism = Database.read_dirty(organism_id)
+    monitor = Database.read_dirty(organism.monitor_id)
 
-    scape_pids = spawn_scapes(ids_to_pids, genotype,
-                              monitor.sensor_ids, monitor.actuator_ids)
-
+    scape_pids = spawn_scapes(ids_to_pids, monitor.sensor_ids,
+                              monitor.actuator_ids)
     spawn_units(ids_to_pids, Monitor, [monitor.id])
     spawn_units(ids_to_pids, Sensor, monitor.sensor_ids)
     spawn_units(ids_to_pids, Actuator, monitor.actuator_ids)
     spawn_units(ids_to_pids, Neuron, monitor.neuron_ids)
 
-    link_sensors(genotype, monitor.sensor_ids, ids_to_pids)
-    link_neurons(genotype, monitor.neuron_ids, ids_to_pids)
-    link_actuators(genotype, monitor.actuator_ids, ids_to_pids)
+    link_sensors(monitor.sensor_ids, ids_to_pids)
+    link_neurons(monitor.neuron_ids, ids_to_pids)
+    link_actuators(monitor.actuator_ids, ids_to_pids)
 
     {monitor_pid, sensor_pids,
      neuron_pids, actuator_pids} = link_monitor(monitor, ids_to_pids)
 
-    monitor_pid = :ets.lookup_element(ids_to_pids, monitor.id, 2)
-
-    loop(State.new(file_name: file_name,
-                   genotype: genotype,
+    loop(State.new(organism_id: organism_id,
+                   population_pid: population_pid,
                    ids_to_pids: ids_to_pids,
                    monitor_pid: monitor_pid,
                    sensor_pids: sensor_pids,
@@ -63,17 +56,12 @@ defmodule Organism do
         #IO.puts "Organism: new fitness: #{fitness}"
 
         {new_highest_fitness, new_attempt} = if fitness > highest_fitness do
-          #IO.puts "Organism: backing up"
-          
-          # Yes! Leave the NN as it is.
           Enum.map s.neuron_pids, fn pid ->
             pid <- {self, :weights_backup}
           end
 
           {fitness, 0}
         else
-          #IO.puts "Organism: restoring"
-
           # No. Restore perturbed neurons to previous weights
           Enum.map s.perturbed_neuron_pids, fn pid ->
             pid <- {self, :weights_restore}
@@ -82,8 +70,17 @@ defmodule Organism do
           {highest_fitness, attempt + 1}
         end
 
+        # Reactivate network
+        Enum.map s.neuron_pids, fn pid ->
+          pid <- {self, :prepare_reactivate}
+        end
+        gather_ready(length(s.neuron_pids))
+        Enum.map s.neuron_pids, fn pid ->
+          pid <- {self, :reactivate}
+        end
+
         # Continue training
-        if new_attempt < 500 do
+        if new_attempt < @max_attempts do
           # Apply random perturbations to a random set of neurons
           num_neurons = length(s.neuron_pids)
           p = 1 / :math.sqrt(num_neurons)
@@ -93,14 +90,10 @@ defmodule Organism do
             pid <- {self, :weights_perturb}
           end
 
-          #IO.puts "Organism: perturbed #{inspect perturbed_neuron_pids}"
-
           # Restart the NN
           s.monitor_pid <- {self, :reactivate}
 
           new_s = s.perturbed_neuron_pids perturbed_neuron_pids
-
-          #:timer.sleep(5000)
 
           loop(new_s, new_highest_fitness, eval_acc + 1, cycle_acc + cycles,
                time_acc + time, new_attempt)
@@ -116,20 +109,21 @@ defmodule Organism do
           # Debugging
           Enum.map s.actuator_pids, fn pid -> pid <- {self, :enable_trace} end
           s.monitor_pid <- {self, :reactivate}
+          receive do {^monitor_pid, :completed, _, _, _} -> :ok end
 
-          receive do
-            {^monitor_pid, :completed, _, _, _} -> :ok
-          end
-
+          # Terminate
           s.monitor_pid <- {self, :terminate}
           Enum.map s.scape_pids, fn pid -> pid <- {self, :terminate} end
 
           IO.puts "Organism finished training: Fitness: #{inspect new_highest_fitness}, num cycles: #{new_cycle_acc}, time: #{inspect new_time_acc}, num evals: #{eval_acc}"
 
-          Process.whereis(:trainer) <- {self, highest_fitness, eval_acc, cycle_acc, time_acc}
+          if s.population_pid != nil do
+            :gen_server.cast(s.population_pid,
+                             {s.organism_id, :terminated, new_highest_fitness,
+                              eval_acc, new_cycle_acc, new_time_acc})
+          end
 
           :ets.delete(s.ids_to_pids)
-
         end
     end
   end
@@ -142,8 +136,8 @@ defmodule Organism do
     end
   end
 
-  def link_sensors(genotype, [id | ids], ids_to_pids) do
-    r = Genotype.read(genotype, id)
+  def link_sensors([id | ids], ids_to_pids) do
+    r = Genotype.read(id)
 
     pid = :ets.lookup_element(ids_to_pids, r.id, 2)
     monitor_pid = :ets.lookup_element(ids_to_pids, r.monitor_id, 2)
@@ -154,12 +148,12 @@ defmodule Organism do
 
     pid <- {self, {r.id, monitor_pid, r.f, scape_pid, r.vl, output_pids}}
 
-    link_sensors(genotype, ids, ids_to_pids)
+    link_sensors(ids, ids_to_pids)
   end
   def link_sensors(_, [], _), do: :ok
 
-  def link_actuators(genotype, [id | ids], ids_to_pids) do
-    r = Genotype.read(genotype, id)
+  def link_actuators([id | ids], ids_to_pids) do
+    r = Genotype.read(id)
 
     pid = :ets.lookup_element(ids_to_pids, r.id, 2)
     monitor_pid = :ets.lookup_element(ids_to_pids, r.monitor_id, 2)
@@ -170,12 +164,12 @@ defmodule Organism do
 
     pid <- {self, {r.id, monitor_pid, r.f, scape_pid, input_pids}}
 
-    link_actuators(genotype, ids, ids_to_pids)
+    link_actuators(ids, ids_to_pids)
   end
   def link_actuators(_, [], _), do: :ok
 
-  def link_neurons(genotype, [id | ids], ids_to_pids) do
-    r = Genotype.read(genotype, id)
+  def link_neurons([id | ids], ids_to_pids) do
+    r = Genotype.read(id)
 
     pid = :ets.lookup_element(ids_to_pids, r.id, 2)
     monitor_pid = :ets.lookup_element(ids_to_pids, r.monitor_id, 2)
@@ -186,11 +180,14 @@ defmodule Organism do
       {:bias, bias} -> {:bias, bias}
       {id, weights} -> {:ets.lookup_element(ids_to_pids, id, 2), weights}
     end
+    ro_pids = Enum.map r.ro_ids, fn id ->
+      :ets.lookup_element(ids_to_pids, id, 2)
+    end
     #IO.inspect w_input_pids
     
-    pid <- {self, {r.id, monitor_pid, r.af, w_input_pids, output_pids}}
+    pid <- {self, {r.id, monitor_pid, r.af, w_input_pids, output_pids, ro_pids}}
     
-    link_neurons(genotype, ids, ids_to_pids)
+    link_neurons(ids, ids_to_pids)
   end
   def link_neurons(_, [], _), do: :ok
 
@@ -237,11 +234,11 @@ defmodule Organism do
     #  end
   end
 
-  def spawn_scapes(ids_to_pids, genotype, sensor_ids, actuator_ids) do
+  def spawn_scapes(ids_to_pids, sensor_ids, actuator_ids) do
     sensor_scapes = Enum.map(sensor_ids, fn id ->
-      Genotype.read(genotype, id).scape end)
+      Genotype.read(id).scape end)
     actuator_scapes = Enum.map(actuator_ids, fn id ->
-      Genotype.read(genotype, id).scape end)
+      Genotype.read(id).scape end)
     scapes = sensor_scapes ++ (actuator_scapes -- sensor_scapes)
 
     scape_pids_names = Enum.map scapes, fn
@@ -258,5 +255,14 @@ defmodule Organism do
     end
 
     Enum.map scape_pids_names, fn {pid, name} -> pid end
+  end
+
+  def gather_ready(0), do: :ok
+  def gather_ready(n) do
+    receive do
+      {_, :ready} -> gather_ready(n-1)
+      after 100000 ->
+        IO.puts "Not all readys received #{n}"
+    end
   end
 end

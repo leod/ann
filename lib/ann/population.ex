@@ -155,6 +155,23 @@ defmodule Population do
   def start_organisms(op_mode, organism_ids), do:
     Enum.map(organism_ids, fn id -> {id, Organism.start(id, self)} end)
 
+  def init_population({population_id, species_constraints,
+                       op_mode, selection_algorithm}) do
+    :random.seed(:erlang.now())
+    result = :mnesia.transaction fn ->
+      if Genotype.try_read(population_id) != nil, do:
+          Database.delete_population(population_id)
+      create_population(population_id, species_constraints)
+    end
+
+    case result do
+      {:atomic, _} ->
+        start({op_mode, population_id, selection_algorithm})
+      error ->
+        IO.puts "Population: Error: #{inspect error}"
+    end
+  end
+
   def create_population(population_id, species_constraints) do
     species_size = @init_species_size
     species_ids = lc constraint inlist species_constraints,

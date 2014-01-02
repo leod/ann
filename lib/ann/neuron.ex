@@ -17,7 +17,8 @@ defmodule Neuron do
     :random.seed(a, b, c)
 
     receive do
-      {^organism_pid, {id, monitor_pid, af, w_input_pids, output_pids, ro_pids}} ->
+      {^organism_pid,
+       {id, monitor_pid, af, w_input_pids, output_pids, ro_pids}} ->
         {self, :forward, 0} |> send(ro_pids)         
 
         loop(State.new(id: id,
