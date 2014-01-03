@@ -30,6 +30,7 @@ defmodule Actuator do
         loop(s.trace(true), [input_pid | input_pids], acc)
 
       {^input_pid, :forward, input} ->
+        #IO.puts "Actuator got input"
         loop(s, input_pids, :lists.append(input, acc))
 
       {^monitor_pid, :terminate} ->

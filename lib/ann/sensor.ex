@@ -29,6 +29,7 @@ defmodule Sensor do
         v = apply(Sensor, s.f, [s.vl, s.scape])
 
         map s.output_pids, fn pid ->
+          #IO.puts "Sensor sending to #{inspect pid}"
           pid <- {self, :forward, v}
         end
 

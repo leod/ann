@@ -180,19 +180,26 @@ defmodule Organism do
   def link_neurons([id | ids], ids_to_pids) do
     r = Database.read(id)
 
+    sensor_w_input_ids = Enum.filter r.w_input_ids, fn
+      {{Genotype.Sensor, _}, _} -> true
+      _ -> false
+    end
+    neuron_w_input_ids = Enum.reduce(sensor_w_input_ids, r.w_input_ids,
+                                     &(List.delete(&2, &1)))
+    sorted_w_input_ids = sensor_w_input_ids ++ neuron_w_input_ids
+
     pid = :ets.lookup_element(ids_to_pids, r.id, 2)
     monitor_pid = :ets.lookup_element(ids_to_pids, r.monitor_id, 2)
     output_pids = Enum.map r.output_ids, fn id ->
       :ets.lookup_element(ids_to_pids, id, 2)
     end
-    w_input_pids = Enum.map r.w_input_ids, fn
+    w_input_pids = Enum.map(sorted_w_input_ids, fn
       {:bias, bias} -> {:bias, bias}
       {id, weights} -> {:ets.lookup_element(ids_to_pids, id, 2), weights}
-    end
+    end)
     ro_pids = Enum.map r.ro_ids, fn id ->
       :ets.lookup_element(ids_to_pids, id, 2)
     end
-    #IO.inspect w_input_pids
     
     pid <- {self, {r.id, monitor_pid, r.af, w_input_pids, output_pids, ro_pids}}
     
