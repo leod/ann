@@ -33,11 +33,9 @@ defmodule Population.Competition do
       IO.puts "Organism id #{inspect organism_id} producing #{normalized_alotment} offspring"
 
       if normalized_alotment >= 1 do
-        offspring_ids = if normalized_alotment >= 2 do
-          map 1..normalized_alotment-1, fn _ ->
+        offspring_ids = map 1..normalized_alotment-1, fn _ ->
             create_offspring(organism_id)
-          end
-        else [] end
+        end
 
         [organism_id | offspring_ids]
       else
