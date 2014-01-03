@@ -96,8 +96,16 @@ defmodule Database do
   end
   
   def delete_population(population_id) do
+    IO.inspect Database.read(population_id).species_ids
+    IO.inspect Database.read(Enum.first(Database.read(population_id).species_ids))
     map Database.read(population_id).species_ids, &delete_species(&1)
     delete(population_id)
+  end
+
+  def clone_organism(organism_id) do
+    clone_organism_id = {Genotype.Organism, Genotype.generate_id()}
+    {:atomic, _} = clone_organism(organism_id, clone_organism_id)
+    clone_organism_id
   end
 
   def clone_organism(organism_id, clone_organism_id) do
@@ -124,14 +132,17 @@ defmodule Database do
       clone_actuator_ids = map_ids.(monitor.actuator_ids)
 
       clone_records(id_map, [:id,
+                             :monitor_id,
                              :output_ids],
                     Genotype.Sensor, monitor.sensor_ids)
       clone_records(id_map, [:id,
+                             :monitor_id,
                              :w_input_ids,
                              :output_ids,
                              :ro_ids],
                     Genotype.Neuron, monitor.neuron_ids)
       clone_records(id_map, [:id,
+                             :monitor_id,
                              :input_ids],
                     Genotype.Actuator, monitor.actuator_ids)
       write(monitor.id(clone_monitor_id)
