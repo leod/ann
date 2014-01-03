@@ -10,6 +10,8 @@ defmodule Population.Competition do
 
     IO.puts "Competition: Estimated next generation size #{next_generation_size_est}"
     IO.puts "Competition: Normalizer #{normalizer}"
+
+    gather_survivors(alotments, normalizer)
   end  
 
   # Calculates for every organism the allowed number of offspring
@@ -28,30 +30,35 @@ defmodule Population.Competition do
 
   # Produes offspring for those organisms deserving it based on their alotment
   def gather_survivors(alotments, normalizer) do
-    map alotments, fn {alotment, fitness, num_neurons, organism_id} ->
+    map(alotments, fn {alotment, fitness, num_neurons, organism_id} ->
       normalized_alotment = :erlang.round(alotment / normalizer)
-      IO.puts "Organism id #{inspect organism_id} producing #{normalized_alotment} offspring"
+      #IO.puts "Organism id #{inspect organism_id} producing #{normalized_alotment} offspring"
 
       if normalized_alotment >= 1 do
-        offspring_ids = map 1..normalized_alotment-1, fn _ ->
-            create_offspring(organism_id)
+        offspring_ids = if normalized_alotment >= 2 do
+          map 1..normalized_alotment-1, fn _ ->
+              create_offspring(organism_id)
+          end
+        else
+          []
         end
+        #IO.puts "-> #{length([organism_id | offspring_ids])}"
 
         [organism_id | offspring_ids]
       else
-        IO.puts "Deleting organism #{inspect organism_id}"
-        Database.delete_organism(organism_id)
+        #IO.puts "Deleting organism #{inspect organism_id}"
+        #Database.delete_organism(organism_id)
 
         []
       end
-    end
+    end)
     |> concat
   end
 
   # Clones an organism and then mutates it.  Note that at this point,
   # the organism id still needs to be added to its species
   def create_offspring(organism_id) do
-    id = Database.clone(organism_id)
+    id = Database.clone_organism(organism_id)
     Mutations.mutate(organism_id)
     id
   end

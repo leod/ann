@@ -36,7 +36,7 @@ defmodule Monitor do
              halt_flag_acc + halt_flag, start_time, :active)
 
       {^organism_pid, :terminate} ->
-        IO.puts "Monitor terminating"
+        #IO.puts "Monitor terminating"
         terminate([s.sensor_pids, s.neuron_pids, s.actuator_pids])
     end
   end
@@ -70,7 +70,7 @@ defmodule Monitor do
         loop(s, s.actuator_pids, 1, 0, 0, start_time, :active)
 
       {^organism_pid, :terminate} ->
-        IO.puts "Monitor terminating"
+        #IO.puts "Monitor terminating"
         terminate([s.sensor_pids, s.neuron_pids, s.actuator_pids])
     end
   end

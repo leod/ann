@@ -3,13 +3,18 @@ defmodule Population do
 
   import Enum
 
-  @init_species_size 100
-  @species_size_limit 200
+  @init_species_size 10
+  @species_size_limit 10
   @generation_limit 100
-  @evaluations_limit :inf
-  @fitness_goal :inf
+  @evaluations_limit 100000
+  @fitness_goal 1000
   @survival_percentage 0.5
-  @neural_efficiency 0.05
+  @neural_efficiency 0.2
+
+  @init_population {Genotype.Population, :test}
+  @init_constraints [Genotype.Constraint.new(morphology: [], neural_afs: [:tanh])]
+  @op_mode :gt
+  @selection_algorithm :competition
   
   defrecord State, op_mode: nil,
                    op_tag: nil,
@@ -30,16 +35,21 @@ defmodule Population do
                    goal_status: nil,
                    selection_algorithm: :competition
 
+  def test() do
+    :random.seed(:erlang.now())
+    Database.start
+    init_population({@init_population, @init_constraints, @op_mode,
+                     @selection_algorithm})
+  end
+
   def start_link(parameters // []), do:
     :gen_server.start_link(Population, parameters, []) 
 
   def start(parameters // []), do:
     :gen_server.start(Population, parameters, [])
 
-  def init(pid, init_state), do:
-    :gen_server.cast(pid, {:init, init_state})
-
   def init({op_mode, population_id, selection_algorithm}) do
+    IO.puts "INITIALIING"
     :erlang.process_flag(:trap_exit, true)
     Process.register(self, :population)
 
@@ -70,7 +80,17 @@ defmodule Population do
                  .cycle_acc(state.cycle_acc + cycle_acc)
                  .time_acc(state.time_acc + time_acc)
 
+    IO.puts "Organism #{inspect organism_id} completed with fitness #{fitness}"  
+
+    Database.transaction fn ->
+      Database.update organism_id, fn organism ->
+        organism.fitness(fitness)
+      end
+    end
+
     if state.organisms_left == 1 do
+      IO.puts "Mutating generation #{state.pop_generation}"
+
       mutate_population(state.population_id, @species_size_limit, :competition)
       new_pop_generation = state.pop_generation + 1
 
@@ -80,9 +100,9 @@ defmodule Population do
         :continue ->
           species_ids = Database.dirty_read(state.population_id).species_ids
           fit_list = lc species_id inlist species_ids,
-                     do: Genotype.read(species_id).fitness
-          best_fitness = lc {_, _, max_fitness, _} inlist fit_list,
-                         do: max_fitness
+                     do: Database.dirty_read(species_id).fitness
+          best_fitness = (lc {_, _, max_fitness, _} inlist fit_list,
+                          do: max_fitness)
                          |> Enum.sort |> Enum.reverse |> Enum.first
 
           if new_pop_generation >= @generation_limit or
@@ -93,7 +113,14 @@ defmodule Population do
                          .num_organisms(length(organism_ids))
                          .organisms_left(length(organism_ids))
                          .pop_generation(new_pop_generation)
-           
+
+            species = Database.dirty_read(first(species_ids))
+            best_organism = Enum.first(species.champion_ids)
+
+            IO.puts "Evaluation finished: Generation #{state.pop_generation}"
+                    <> ", num evaluations: #{state.eval_acc}"
+                    <> ", best fitness: #{best_fitness}"
+                    <> ", best organism: #{inspect best_organism}"
             {:stop, :normal, state}
           else
             organism_ids = get_organism_ids(state.population_id)
@@ -142,24 +169,26 @@ defmodule Population do
 
   def get_organism_ids(population_id), do: get_organism_ids(population_id, :all)
   def get_organism_ids(population_id, :all) do
-    Database.read(population_id).species_ids 
-    |> Enum.map fn species_id -> Database.read(species_id).organism_ids end
+    Database.dirty_read(population_id).species_ids 
+    |> Enum.map(fn species_id -> Database.dirty_read(species_id).organism_ids end)
     |> Enum.concat
   end
   def get_organism_ids(population_id, :champion) do
     Database.read(population_id).species_ids 
-    |> Enum.map fn species_id -> Database.read(species_id).champion_ids end
+    |> Enum.map(fn species_id -> Database.dirty_read(species_id).champion_ids end)
     |> Enum.concat
   end
 
-  def start_organisms(op_mode, organism_ids), do:
+  def start_organisms(op_mode, organism_ids) do
+    #IO.puts "Starting #{inspect organism_ids}"
     Enum.map(organism_ids, fn id -> {id, Organism.start(id, self)} end)
+  end
 
   def init_population({population_id, species_constraints,
                        op_mode, selection_algorithm}) do
     :random.seed(:erlang.now())
     result = :mnesia.transaction fn ->
-      if Genotype.try_read(population_id) != nil, do:
+      if Database.try_read(population_id) != nil, do:
           Database.delete_population(population_id)
       create_population(population_id, species_constraints)
     end
@@ -185,11 +214,12 @@ defmodule Population do
     species_id = {Genotype.Species, Genotype.generate_id()}
 
     # Create organisms for species
-    organism_ids = Enum.map 1..species_size, fn _ ->
+    organisms = Enum.map 1..species_size, fn _ ->
       organism_id = {Genotype.Organism, Genotype.generate_id()}
       Genotype.generate(organism_id, species_id, constraint)
     end
-    |> Database.write
+    Database.write organisms
+    organism_ids = Enum.map organisms, fn [o|rs] -> o.id end
 
     Genotype.Species.new(id: species_id,
                          population_id: population_id,
@@ -200,12 +230,12 @@ defmodule Population do
   end
 
   def mutate_population(population_id, species_size_limit, algorithm) do
-    neural_energy_cost = calculate_energy_cost(population_id)
-    :mnesia.transaction fn ->
+    {:atomic, _} = :mnesia.transaction fn ->
+      neural_energy_cost = calculate_energy_cost(population_id)
       population = Database.read(population_id)
-      Enum.map population.species_ids &mutate_species(&1, species_size_limit,
-                                                      neural_energy_cost, 
-                                                      algorithm)
+      Enum.map population.species_ids, &mutate_species(&1, species_size_limit,
+                                                       neural_energy_cost, 
+                                                       algorithm)
     end
   end
 
@@ -231,24 +261,25 @@ defmodule Population do
           |> reverse
           |> map(fn {_true_fitness, rest} -> rest end)
 
-        valid_summaries = :list.sublist(sorted_summaries, num_survivors)
+        valid_summaries = :lists.sublist(sorted_summaries, num_survivors)
         invalid_summaries = sorted_summaries -- valid_summaries
 
-        {_, _, invalid_organism_ids} = List.unzip(invalid_summaries)
+        [_, _, invalid_organism_ids] = List.unzip(invalid_summaries)
         map invalid_organism_ids, &Database.delete_organism(&1)
 
-        {_, _, champion_ids} = List.sublist(valid_summaries, 3)
+        [_, _, champion_ids] = :lists.sublist(valid_summaries, 3)
                                |> List.unzip
 
         IO.puts "Population: valid summaries: #{inspect valid_summaries}"
         IO.puts "Population: invalid summaries: #{inspect invalid_summaries}"
         IO.puts "Population: neural energy cost: #{inspect neural_energy_cost}"
 
-        new_organism_ids = Competition.competition(valid_summaries,
-                                                   population_limit,
-                                                   neural_energy_cost)
+        new_organism_ids = Population.Competition.competition(valid_summaries,
+                                                              population_limit,
+                                                              neural_energy_cost)
+        #IO.puts "NEW #{inspect new_organism_ids}"
 
-        {fitness_list, _, _} = List.unzip(sorted_summaries)
+        [fitness_list, _, _] = List.unzip(sorted_summaries)
         [top_fitness | _] = fitness_list
 
         new_innovation_factor = if top_fitness > species.innovation_factor,
@@ -260,8 +291,6 @@ defmodule Population do
                .innovation_factor(new_innovation_factor)
         |> Database.write
     end
-
-
   end
 
   def get_organism_summaries(organism_ids) do
@@ -275,22 +304,22 @@ defmodule Population do
 
   def calculate_energy_cost(population_id) do
     organism_ids = get_organism_ids(population_id)
-    total_energy = lc id inlist organism_ids, do: Database.read(id).fitness
+    total_energy = (lc id inlist organism_ids, do: Database.read(id).fitness)
                    |> :lists.sum
-    total_neurons = lc id inlist organism_ids,
-                    do: Database.read(Database.read(id).monitor_id).neuron_ids
-                        |> length
+    total_neurons = (lc id inlist organism_ids,
+                     do: Database.read(Database.read(id).monitor_id).neuron_ids
+                         |> length)
                     |> :lists.sum
     total_energy / total_neurons
   end
 
   def calculate_species_fitness(species=Genotype.Species[]) do
-    fitness_list = reduce species.organism_ids, [], fn organism_id, acc ->
+    fitness_list = reduce(species.organism_ids, [], fn organism_id, acc ->
       case Database.read(organism_id).fitness do
         nil -> acc
         fitness -> [fitness | acc]
       end
-    end
+    end)
     |> sort
 
     [min_fitness | _] = fitness_list

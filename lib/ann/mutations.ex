@@ -33,7 +33,7 @@ defmodule Mutations do
                     |> :random.uniform
                     |> :erlang.round
 
-    IO.puts "Number of neurons: #{num_neurons}, performing #{num_mutations} on #{inspect organism_id}"
+    #IO.puts "Number of neurons: #{num_neurons}, performing #{num_mutations} on #{inspect organism_id}"
 
     apply_mutators(organism_id, num_mutations)
   end
@@ -43,7 +43,7 @@ defmodule Mutations do
   def apply_mutators(organism_id, i) do
     result = :mnesia.transaction fn ->
       mutator = pick(mutators)
-      IO.puts "Mutator #{inspect mutator}"
+      #IO.puts "Mutator #{inspect mutator}"
 
       apply(Mutations, mutator, [organism_id])
     end
@@ -52,7 +52,7 @@ defmodule Mutations do
       {:atomic, _} ->
         apply_mutators(organism_id, i-1)
       error ->
-        IO.puts "Error: #{inspect error}, reapplying mutation"
+        #IO.puts "Error: #{inspect error}, reapplying mutation"
         apply_mutators(organism_id, i)
     end
   end
@@ -121,12 +121,16 @@ defmodule Mutations do
     neuron_id = pick(monitor.neuron_ids)
     neuron = Database.read(neuron_id)
 
-    afs = organism.constraint.neural_afs -- [neuron.af]
-    new_af = Genotype.generate_neuron_af(afs)
-    neuron.af(new_af) |> Database.write
+    case organism.constraint.neural_afs -- [neuron.af] do
+      [] ->
+        exit("No alternative af exists")
+      afs ->
+        new_af = Genotype.generate_neuron_af(afs)
+        neuron.af(new_af) |> Database.write
 
-    history = [{:mutate_af, neuron_id} | organism.history]
-    organism.history(history) |> Database.write
+        history = [{:mutate_af, neuron_id} | organism.history]
+        organism.history(history) |> Database.write
+    end
   end
 
   def add_neuron_inlink(organism_id) do

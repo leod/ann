@@ -42,7 +42,8 @@ defmodule Genotype do
                      organism_ids: [],
                      champion_ids: [],
                      morphologies: [],
-                     innovation_factor: 0
+                     innovation_factor: 0,
+                     fitness: 0
   defrecord Constraint, morphology: [],
                         neural_afs: []
   defrecord Population, id: nil,
@@ -97,7 +98,7 @@ defmodule Genotype do
                                                           sensors,
                                                           actuators))
 
-    [sensors, neurons, actuators, monitor, organism]
+    [organism, monitor, sensors, neurons, actuators]
   end
 
   def generate_initial_neuro_layer(monitor_id, generation, constraint,
