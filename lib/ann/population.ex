@@ -5,9 +5,9 @@ defmodule Population do
 
   @init_species_size 10
   @species_size_limit 10
-  @generation_limit 100
-  @evaluations_limit 100000
-  @fitness_goal 1000
+  @generation_limit 2000
+  @evaluations_limit :inf
+  @fitness_goal :inf
   @survival_percentage 0.5
   @neural_efficiency 0.2
 
@@ -80,7 +80,7 @@ defmodule Population do
                  .cycle_acc(state.cycle_acc + cycle_acc)
                  .time_acc(state.time_acc + time_acc)
 
-    IO.puts "Organism #{inspect organism_id} completed with fitness #{fitness}"  
+    #IO.puts "Organism #{inspect organism_id} completed with fitness #{fitness}"  
 
     Database.transaction fn ->
       Database.update organism_id, fn organism ->

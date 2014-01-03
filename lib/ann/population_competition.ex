@@ -59,7 +59,7 @@ defmodule Population.Competition do
   # the organism id still needs to be added to its species
   def create_offspring(organism_id) do
     id = Database.clone_organism(organism_id)
-    Mutations.mutate(organism_id)
+    Mutations.mutate(id)
     id
   end
 end
