@@ -10,6 +10,7 @@ defmodule Mutations do
      :add_sensor_outlink,
      :add_actuator_inlink,
      :outsplice,
+     :add_neuron,
      :add_sensor,
      :add_actuator]
 
@@ -221,7 +222,7 @@ defmodule Mutations do
 
     history = [{:add_neuron, new_neuron_id, from_id, to_id} | organism.history] 
     pattern = List.keyreplace(organism.pattern, target_layer, 0,
-                              [new_neuron_id | target_neuron_ids])
+                              {target_layer, [new_neuron_id | target_neuron_ids]})
     organism.history(history)
             .pattern(pattern) |> Database.write
     monitor.neuron_ids([new_neuron_id | monitor.neuron_ids])
@@ -389,6 +390,9 @@ defmodule Mutations do
   def link_to(from_neuron_id, to_actuator, 1, generation)
   when is_record(to_actuator, Genotype.Actuator) do
     if not Enum.member?(to_actuator.input_ids, from_neuron_id) do
+      if length(to_actuator.input_ids) >= to_actuator.vl, do:
+        exit("Actuator has full input")
+
       input_ids = [from_neuron_id | to_actuator.input_ids]
       to_actuator.input_ids(input_ids)
                  .generation(generation)
