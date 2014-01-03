@@ -79,13 +79,8 @@ defmodule Organism do
         end
 
         # Reactivate network
-        Enum.map s.neuron_pids, fn pid ->
-          pid <- {self, :prepare_reactivate}
-        end
+        Enum.map s.neuron_pids, fn pid -> pid <- {self, :prepare_reactivate} end
         gather_ready(length(s.neuron_pids))
-        Enum.map s.neuron_pids, fn pid ->
-          pid <- {self, :reactivate}
-        end
 
         # Continue training
         if new_attempt < @max_attempts do
@@ -99,7 +94,11 @@ defmodule Organism do
           end
 
           # Restart the NN
+          Enum.map s.neuron_pids, fn pid ->
+            pid <- {self, :reactivate}
+          end
           s.monitor_pid <- {self, :reactivate}
+          #IO.puts "Reactivated"
 
           new_s = s.perturbed_neuron_pids perturbed_neuron_pids
 
@@ -109,16 +108,21 @@ defmodule Organism do
           new_cycle_acc = cycle_acc + cycles
           new_time_acc = time_acc + time
 
+
+          # Debugging
+          Enum.map s.neuron_pids, fn pid -> pid <- {self, :reactivate} end
+          Enum.map s.actuator_pids, fn pid -> pid <- {self, :enable_trace} end
+          s.monitor_pid <- {self, :reactivate}
+          receive do {^monitor_pid, :completed, _, _, _} -> :ok end
+          Enum.map s.neuron_pids, fn pid -> pid <- {self, :prepare_reactivate} end
+          gather_ready(length(s.neuron_pids))
+
           # Get updated weights from neurons and save
+          Enum.map s.neuron_pids, fn pid -> pid <- {self, :reactivate} end
           new_weights = Monitor.get_state(s.neuron_pids, [])
           Database.transaction fn ->
             update_genotype(s.ids_to_pids, new_weights)
           end
-
-          # Debugging
-          Enum.map s.actuator_pids, fn pid -> pid <- {self, :enable_trace} end
-          s.monitor_pid <- {self, :reactivate}
-          receive do {^monitor_pid, :completed, _, _, _} -> :ok end
 
           # Terminate
           s.monitor_pid <- {self, :terminate}
@@ -280,5 +284,9 @@ defmodule Organism do
       after 100000 ->
         IO.puts "Not all readys received #{n}"
     end
+  end
+
+  def reactivate_neurons(state) do
+
   end
 end

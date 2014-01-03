@@ -11,7 +11,7 @@ defmodule Neuron do
   end
 
   def start(organism_pid) do
-    #IO.puts "Neuron begin #{inspect self}"
+    ##IO.puts "Neuron begin #{inspect self}"
 
     {a, b, c} = :erlang.now()
     :random.seed(a, b, c)
@@ -48,7 +48,7 @@ defmodule Neuron do
     monitor_pid = s.monitor_pid
     organism_pid = s.organism_pid
 
-    #IO.puts "Neuron #{inspect self} waiting"
+    #IO.puts "Neuron #{inspect s.id} waiting"
 
     receive do
       {^input_pid, :forward, input} ->
@@ -63,8 +63,7 @@ defmodule Neuron do
 
       {^organism_pid, :weights_restore} ->
         #IO.puts "Neuron #{inspect self} restore"
-        loop(s.w_input_pids(s.w_input_pids_backup),
-             [{input_pid, weights} | w_input_pids], acc)
+        loop(s.w_input_pids(s.w_input_pids_backup), s.w_input_pids_backup, acc)
 
       {^organism_pid, :weights_perturb} ->
         #IO.puts "Neuron #{inspect self} perturb"
@@ -84,8 +83,8 @@ defmodule Neuron do
         receive do
           {^organism_pid, :reactivate} ->
             {self, :forward, [0]} |> send(s.ro_pids)
-            loop(s, s.w_input_pids, 0)
         end
+        loop(s, s.w_input_pids, 0)
 
       {^monitor_pid, :terminate} ->
         #IO.puts "Neuron #{inspect self} terminate"
@@ -146,7 +145,7 @@ defmodule Neuron do
   def flush() do
     receive do
       _ -> flush()
-      after 0 -> :ok
+    after 0 -> :ok
     end
   end
 end

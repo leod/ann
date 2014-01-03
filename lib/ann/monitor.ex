@@ -66,6 +66,7 @@ defmodule Monitor do
           pid <- {self, :sync}
         end
 
+        #IO.puts "Monitor reactivated"
         loop(s, s.actuator_pids, 1, 0, 0, start_time, :active)
 
       {^organism_pid, :terminate} ->
