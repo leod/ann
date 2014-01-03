@@ -153,6 +153,8 @@ defmodule Database do
                    .neuron_ids(clone_neuron_ids))
       write(organism.id(clone_organism_id)
                     .monitor_id(clone_monitor_id))
+
+      :ets.delete(id_map)
     end
   end
 

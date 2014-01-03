@@ -3,9 +3,9 @@ defmodule Population do
 
   import Enum
 
-  @init_species_size 10
-  @species_size_limit 10
-  @generation_limit 2000
+  @init_species_size 100
+  @species_size_limit 100
+  @generation_limit 200
   @evaluations_limit :inf
   @fitness_goal :inf
   @survival_percentage 0.5
