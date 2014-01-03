@@ -35,7 +35,7 @@ defmodule Scape do
 
         case xor_list do
           [] ->
-            fitness = 1 / (:math.sqrt(acc_err + err) + 0.00001)
+            fitness = 1 / (acc_err + err + 0.00001)
             from <- {self, fitness, 1}
             xor_sim(organism_pid, all_xor_list, all_xor_list, 0)
 
@@ -51,11 +51,8 @@ defmodule Scape do
 
   defp list_compare(a, b)
   when length(a) == length(b) do
-    x = Enum.zip(a, b)
+    Enum.zip(a, b)
     |> Enum.reduce(0, fn {x, y}, e -> e + :math.pow(x - y, 2) end)
-    |> :math.sqrt()
-
-    #IO.puts "XOR compare #{inspect a} with #{inspect b} => #{x}"
-    x
+    #|> :math.sqrt()
   end
 end
