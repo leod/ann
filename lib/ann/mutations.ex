@@ -190,9 +190,12 @@ defmodule Mutations do
     actuator_id = pick(monitor.actuator_ids)
     actuator = Database.read(actuator_id)
 
+    if length(actuator.input_ids) == actuator.vl, do:
+      exit("Actuator cannot accept more input!")
+
     case monitor.neuron_ids -- actuator.input_ids do
       [] ->
-        exit("Sensor already fully connected!" )
+        exit("Actuator already fully connected!")
       ids ->
         do_link(organism_id, pick(ids), actuator_id)
 

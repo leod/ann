@@ -36,49 +36,59 @@ defmodule Neuron do
     output = apply(Neuron, s.af, [acc])
     {self, :forward, [output]} |> send(s.output_pids)
 
+    #IO.puts "Neuron #{inspect s.id} forwarding to #{inspect s.output_pids}"
     loop(s, s.w_input_pids, 0)
   end
 
   def loop(s, [{:bias, bias}], acc) do
-    loop(s, s.w_input_pids, acc + bias)
+    loop(s, [], acc + bias)
   end
 
   def loop(s, [{input_pid, weights} | w_input_pids], acc) do
     monitor_pid = s.monitor_pid
     organism_pid = s.organism_pid
 
+    #IO.puts "Neuron #{inspect self} waiting"
+
     receive do
       {^input_pid, :forward, input} ->
+        #IO.puts "Neuron #{inspect self} #{inspect s.id} got input #{inspect input} with weights #{inspect weights}"
         result = dot(input, weights)
         loop(s, w_input_pids, acc + result)
 
       {^organism_pid, :weights_backup} ->
+        #IO.puts "Neuron #{inspect self} backup"
         loop(s.w_input_pids_backup(s.w_input_pids),
              [{input_pid, weights} | w_input_pids], acc)
 
       {^organism_pid, :weights_restore} ->
+        #IO.puts "Neuron #{inspect self} restore"
         loop(s.w_input_pids(s.w_input_pids_backup),
              [{input_pid, weights} | w_input_pids], acc)
 
       {^organism_pid, :weights_perturb} ->
+        #IO.puts "Neuron #{inspect self} perturb"
         new_w_input_pids = perturb_input(s.w_input_pids)
         loop(s.w_input_pids(new_w_input_pids), new_w_input_pids, acc)
 
       {from, :get_state} ->
+        #IO.puts "Neuron #{inspect self} get_state"
         from <- {self, s.id, s.w_input_pids}
         loop(s, [{input_pid, weights} | w_input_pids], acc)
 
       {^organism_pid, :prepare_reactivate} ->
+        #IO.puts "Neuron #{inspect self} prepare_reactivate"
         # Get rid of incoming messages from recurrent connections
         flush()
         organism_pid <- {self, :ready}
         receive do
           {^organism_pid, :reactivate} ->
-            #{self, :forward, 0} |> send(ro_pids)         
+            {self, :forward, [0]} |> send(s.ro_pids)
             loop(s, s.w_input_pids, 0)
         end
 
       {^monitor_pid, :terminate} ->
+        #IO.puts "Neuron #{inspect self} terminate"
         :ok
     end
   end
