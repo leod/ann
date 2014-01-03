@@ -127,7 +127,7 @@ defmodule Genotype do
 
         inputs = [{sensor.id, sensor.vl}]
         new_sensor = sensor.output_ids([neuron_id | sensor.output_ids])
-        new_sensors = List.keyreplace(sensors, sensor.id, 2, new_sensor)
+        new_sensors = List.keyreplace(sensors, sensor.id, 1, new_sensor)
         
         {inputs, new_sensors}
       else

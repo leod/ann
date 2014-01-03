@@ -78,7 +78,7 @@ defmodule Population do
 
       case state.op_tag do
         :continue ->
-          species_ids = Genotype.read(state.population_id).species_ids
+          species_ids = Database.dirty_read(state.population_id).species_ids
           fit_list = lc species_id inlist species_ids,
                      do: Genotype.read(species_id).fitness
           best_fitness = lc {_, _, max_fitness, _} inlist fit_list,

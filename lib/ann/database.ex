@@ -37,9 +37,18 @@ defmodule Database do
     end
   end
 
+  def dirty_read(key) do
+    [r] = :mnesia.dirty_read({elem(key, 0), key})
+    r
+  end
+
   def read(key) do
     [r] = :mnesia.read({elem(key, 0), key})
     r
+  end
+
+  def transaction(f) do
+    :mnesia.transaction f
   end
 
   def write(rs) when is_list(rs), do: Enum.map(rs, fn r -> write(r) end)
@@ -207,5 +216,64 @@ defmodule Database do
     :mnesia.transaction fn ->
       print({Genotype.Organism, :test})
     end 
+  end
+
+  def organism_to_dot(organism_id, file_name) do
+    id_dot = fn id -> "\"#{inspect id}\"" end
+    monitor_dot = fn monitor ->
+      "#{id_dot.(monitor.id)} [label=\"Monitor\", shape=box]\n"
+    end
+    label_dot = fn
+      {Genotype.Neuron, id} -> "N#{inspect id}"
+      {Genotype.Sensor, id} -> "S#{inspect id}"
+      {Genotype.Actuator, id} -> "A#{inspect id}"
+    end
+    w_inputs_dot = fn to_id, inputs ->
+      map(inputs, fn
+        {:bias, _} -> ""
+        {from_id, weights} ->
+          "#{id_dot.(from_id)} -> #{id_dot.(to_id)} [label=\"#{inspect weights}\"]\n"
+      end)
+      |> reduce("", &(&1 <> &2))
+    end
+    inputs_dot = fn to_id, inputs ->
+      map(inputs, fn from_id ->
+        "#{id_dot.(from_id)} -> #{id_dot.(to_id)}\n"
+      end)
+      |> reduce("", &(&1 <> &2))
+    end
+    neuron_dot = fn neuron ->
+      "#{id_dot.(neuron.id)} [label=\"#{label_dot.(neuron.id)}\" shape=circle]\n"
+      <> w_inputs_dot.(neuron.id, neuron.w_input_ids)
+    end
+    sensor_dot = fn sensor ->
+      "#{id_dot.(sensor.id)} [label=\"#{label_dot.(sensor.id)}\" shape=trapezium]\n"
+    end
+    actuator_dot = fn actuator ->
+      "#{id_dot.(actuator.id)} [label=\"#{label_dot.(actuator.id)}\" shape=trapezium]\n"
+      <> inputs_dot.(actuator.id, actuator.input_ids)
+    end
+
+    {:atomic, dot} = transaction fn ->
+      organism = read(organism_id)
+      monitor = read(organism.monitor_id)
+
+      n_dots = map(monitor.neuron_ids, &(Database.read(&1) |> neuron_dot.()))
+               |> reduce("", &(&1 <> &2))
+      s_dots = map(monitor.sensor_ids, &(Database.read(&1) |> sensor_dot.()))
+               |> reduce("", &(&1 <> &2))
+      a_dots = map(monitor.actuator_ids, &(Database.read(&1) |> actuator_dot.()))
+               |> reduce("", &(&1 <> &2))
+
+      prefix_dot = "digraph #{id_dot.(organism.id)} {\n"
+      postfix_dot = "}\n"
+
+      dot = prefix_dot
+            #<> monitor_dot.(monitor)
+            <> n_dots <> s_dots <> a_dots
+            <> postfix_dot
+    end
+
+    File.write!(file_name, dot)
   end
 end

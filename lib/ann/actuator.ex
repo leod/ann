@@ -27,7 +27,6 @@ defmodule Actuator do
 
     receive do
       {^organism_pid, :enable_trace} ->
-        IO.puts "yo"
         loop(s.trace(true), [input_pid | input_pids], acc)
 
       {^input_pid, :forward, input} ->

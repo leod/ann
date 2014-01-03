@@ -19,7 +19,7 @@ defmodule Neuron do
     receive do
       {^organism_pid,
        {id, monitor_pid, af, w_input_pids, output_pids, ro_pids}} ->
-        {self, :forward, 0} |> send(ro_pids)         
+        {self, :forward, [0]} |> send(ro_pids)         
 
         loop(State.new(id: id,
                        organism_pid: organism_pid,
@@ -32,11 +32,15 @@ defmodule Neuron do
     end
   end
 
-  def loop(s, [{:bias, bias}], acc) do
-    output = apply(Neuron, s.af, [acc + bias])
+  def loop(s, [], acc) do
+    output = apply(Neuron, s.af, [acc])
     {self, :forward, [output]} |> send(s.output_pids)
 
     loop(s, s.w_input_pids, 0)
+  end
+
+  def loop(s, [{:bias, bias}], acc) do
+    loop(s, s.w_input_pids, acc + bias)
   end
 
   def loop(s, [{input_pid, weights} | w_input_pids], acc) do
@@ -125,7 +129,7 @@ defmodule Neuron do
     end
   end
 
-  def send(pids, message) do
+  def send(message, pids) do
     map pids, fn pid -> pid <- message end
   end
 

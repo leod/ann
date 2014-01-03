@@ -19,32 +19,40 @@ defmodule Organism do
 
     ids_to_pids = :ets.new(:ids_to_pids, [:set, :private])
 
-    organism = Database.read_dirty(organism_id)
-    monitor = Database.read_dirty(organism.monitor_id)
+    result = Database.transaction fn ->
+      organism = Database.read(organism_id)
+      monitor = Database.read(organism.monitor_id)
 
-    scape_pids = spawn_scapes(ids_to_pids, monitor.sensor_ids,
-                              monitor.actuator_ids)
-    spawn_units(ids_to_pids, Monitor, [monitor.id])
-    spawn_units(ids_to_pids, Sensor, monitor.sensor_ids)
-    spawn_units(ids_to_pids, Actuator, monitor.actuator_ids)
-    spawn_units(ids_to_pids, Neuron, monitor.neuron_ids)
+      scape_pids = spawn_scapes(ids_to_pids, monitor.sensor_ids,
+                                monitor.actuator_ids)
+      spawn_units(ids_to_pids, Monitor, [monitor.id])
+      spawn_units(ids_to_pids, Sensor, monitor.sensor_ids)
+      spawn_units(ids_to_pids, Actuator, monitor.actuator_ids)
+      spawn_units(ids_to_pids, Neuron, monitor.neuron_ids)
 
-    link_sensors(monitor.sensor_ids, ids_to_pids)
-    link_neurons(monitor.neuron_ids, ids_to_pids)
-    link_actuators(monitor.actuator_ids, ids_to_pids)
+      link_sensors(monitor.sensor_ids, ids_to_pids)
+      link_neurons(monitor.neuron_ids, ids_to_pids)
+      link_actuators(monitor.actuator_ids, ids_to_pids)
 
-    {monitor_pid, sensor_pids,
-     neuron_pids, actuator_pids} = link_monitor(monitor, ids_to_pids)
+      {scape_pids, link_monitor(monitor, ids_to_pids)}
+    end
 
-    loop(State.new(organism_id: organism_id,
-                   population_pid: population_pid,
-                   ids_to_pids: ids_to_pids,
-                   monitor_pid: monitor_pid,
-                   sensor_pids: sensor_pids,
-                   neuron_pids: neuron_pids,
-                   actuator_pids: actuator_pids,
-                   scape_pids: scape_pids),
-         0, 0, 0, 0, 1) 
+    case result do
+      {:atomic, {scape_pids,
+                 {monitor_pid, sensor_pids, neuron_pids, actuator_pids}}} ->
+        loop(State.new(organism_id: organism_id,
+                       population_pid: population_pid,
+                       ids_to_pids: ids_to_pids,
+                       monitor_pid: monitor_pid,
+                       sensor_pids: sensor_pids,
+                       neuron_pids: neuron_pids,
+                       actuator_pids: actuator_pids,
+                       scape_pids: scape_pids),
+             0, 0, 0, 0, 1) 
+      error ->
+        IO.puts "Failed to create organism #{inspect organism_id}: #{inspect error}"
+        # TODO: Clean up started processes?
+    end
   end
 
   def loop(s, highest_fitness, eval_acc, cycle_acc, time_acc, attempt) do
@@ -103,8 +111,9 @@ defmodule Organism do
 
           # Get updated weights from neurons and save
           new_weights = Monitor.get_state(s.neuron_pids, [])
-          update_genotype(s.ids_to_pids, s.genotype, new_weights)
-          Genotype.save(s.genotype, s.file_name)
+          Database.transaction fn ->
+            update_genotype(s.ids_to_pids, new_weights)
+          end
 
           # Debugging
           Enum.map s.actuator_pids, fn pid -> pid <- {self, :enable_trace} end
@@ -137,7 +146,7 @@ defmodule Organism do
   end
 
   def link_sensors([id | ids], ids_to_pids) do
-    r = Genotype.read(id)
+    r = Database.read(id)
 
     pid = :ets.lookup_element(ids_to_pids, r.id, 2)
     monitor_pid = :ets.lookup_element(ids_to_pids, r.monitor_id, 2)
@@ -150,10 +159,10 @@ defmodule Organism do
 
     link_sensors(ids, ids_to_pids)
   end
-  def link_sensors(_, [], _), do: :ok
+  def link_sensors([], _), do: :ok
 
   def link_actuators([id | ids], ids_to_pids) do
-    r = Genotype.read(id)
+    r = Database.read(id)
 
     pid = :ets.lookup_element(ids_to_pids, r.id, 2)
     monitor_pid = :ets.lookup_element(ids_to_pids, r.monitor_id, 2)
@@ -166,10 +175,10 @@ defmodule Organism do
 
     link_actuators(ids, ids_to_pids)
   end
-  def link_actuators(_, [], _), do: :ok
+  def link_actuators([], _), do: :ok
 
   def link_neurons([id | ids], ids_to_pids) do
-    r = Genotype.read(id)
+    r = Database.read(id)
 
     pid = :ets.lookup_element(ids_to_pids, r.id, 2)
     monitor_pid = :ets.lookup_element(ids_to_pids, r.monitor_id, 2)
@@ -189,7 +198,7 @@ defmodule Organism do
     
     link_neurons(ids, ids_to_pids)
   end
-  def link_neurons(_, [], _), do: :ok
+  def link_neurons([], _), do: :ok
 
   def link_monitor(monitor, ids_to_pids) do
     pid = :ets.lookup_element(ids_to_pids, monitor.id, 2)
@@ -208,17 +217,17 @@ defmodule Organism do
     {pid, sensor_pids, neuron_pids, actuator_pids}
   end
 
-  def update_genotype(ids_to_pids, genotype, weights) do
+  def update_genotype(ids_to_pids, weights) do
     Enum.map weights, fn {id, w_input_pids} ->
       w_input_ids = Enum.map w_input_pids, fn
         {:bias, bias} -> {:bias, bias}
         {pid, w} -> {:ets.lookup_element(ids_to_pids, pid, 2), w}
       end
 
-      n = Genotype.read(genotype, id)
+      n = Database.read(id)
       new_n = n.w_input_ids(w_input_ids)
 
-      Genotype.write(genotype, new_n)
+      Database.write(new_n)
     end
 
     #  Enum.reduce weights, genotype, fn {id, w_input_pids}, acc ->
@@ -236,9 +245,9 @@ defmodule Organism do
 
   def spawn_scapes(ids_to_pids, sensor_ids, actuator_ids) do
     sensor_scapes = Enum.map(sensor_ids, fn id ->
-      Genotype.read(id).scape end)
+      Database.read(id).scape end)
     actuator_scapes = Enum.map(actuator_ids, fn id ->
-      Genotype.read(id).scape end)
+      Database.read(id).scape end)
     scapes = sensor_scapes ++ (actuator_scapes -- sensor_scapes)
 
     scape_pids_names = Enum.map scapes, fn
