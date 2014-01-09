@@ -98,8 +98,8 @@ defmodule Database do
   end
   
   def delete_population(population_id) do
-    IO.inspect Database.read(population_id).species_ids
-    IO.inspect Database.read(Enum.first(Database.read(population_id).species_ids))
+    #IO.inspect Database.read(population_id).species_ids
+    #IO.inspect Database.read(Enum.first(Database.read(population_id).species_ids))
     map Database.read(population_id).species_ids, &delete_species(&1)
     delete(population_id)
   end
@@ -115,9 +115,9 @@ defmodule Database do
       id_map = :ets.new(:id_map, [:set, :private])
 
       map_ids = fn ids ->
-        map ids, fn {type, {layer_index, num}} ->
+        map ids, fn id={type, {layer_index, num}} ->
           clone_id = {type, {layer_index, Genotype.generate_id()}}  
-          :ets.insert(id_map, {{type, {layer_index, num}}, clone_id})
+          :ets.insert(id_map, {id, clone_id})
           
           clone_id
         end
@@ -258,7 +258,8 @@ defmodule Database do
       |> reduce("", &(&1 <> &2))
     end
     neuron_dot = fn neuron ->
-      "#{id_dot.(neuron.id)} [label=\"#{label_dot.(neuron.id)}\" shape=circle]\n"
+      label = label_dot.(neuron.id) <> " " <> atom_to_binary(neuron.af)
+      "#{id_dot.(neuron.id)} [label=\"#{label}\" shape=circle]\n"
       <> w_inputs_dot.(neuron.id, neuron.w_input_ids)
     end
     sensor_dot = fn sensor ->

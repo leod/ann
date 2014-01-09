@@ -37,7 +37,7 @@ defmodule Population.Competition do
       if normalized_alotment >= 1 do
         offspring_ids = if normalized_alotment >= 2 do
           map 1..normalized_alotment-1, fn _ ->
-              create_offspring(organism_id)
+            create_offspring(organism_id)
           end
         else
           []

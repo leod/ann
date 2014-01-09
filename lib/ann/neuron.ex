@@ -1,16 +1,21 @@
 defmodule Neuron do
+  def afs(), do:
+    [:tanh, :cos, :sin, :sgn, :bin, :trinary, :linear]
+
   import Enum
 
   def delta_multiplier, do: :math.pi() * 2
   def sat_limit, do: :math.pi() * 2
 
-  defrecord State, id: nil, organism_pid: nil, monitor_pid: nil, af: nil, w_input_pids: nil, output_pids: nil, w_input_pids_backup: nil, ro_pids: nil
-
-  def create(organism_pid) do
-    pid = spawn(Neuron, :start, [organism_pid])
-  end
+  defrecord State, id: nil, organism_pid: nil, monitor_pid: nil, af: nil,
+                   w_input_pids: nil, output_pids: nil,
+                   w_input_pids_backup: nil, ro_pids: nil
 
   def start(organism_pid) do
+    pid = spawn(Neuron, :init, [organism_pid])
+  end
+
+  def init(organism_pid) do
     ##IO.puts "Neuron begin #{inspect self}"
 
     {a, b, c} = :erlang.now()
@@ -49,6 +54,7 @@ defmodule Neuron do
     organism_pid = s.organism_pid
 
     #IO.puts "Neuron #{inspect s.id} waiting"
+    #:timer.sleep(500)
 
     receive do
       {^input_pid, :forward, input} ->
@@ -91,8 +97,6 @@ defmodule Neuron do
         :ok
     end
   end
-
-  def tanh(x), do: :math.tanh(x)
 
   def dot(a, b) when length(a) == length(b) do
     zip(a, b) |> reduce(0, fn {x, y}, acc -> acc + x * y end)
@@ -148,4 +152,24 @@ defmodule Neuron do
     after 0 -> :ok
     end
   end
+
+  # Activation functions
+  def tanh(x), do: :math.tanh(x)
+  def cos(x), do: :math.cos(x)
+  def sin(x), do: :math.sin(x)
+
+  def sgn(x) when x > 0, do: 1
+  def sgn(x), do: -1
+
+  def bin(x) when x > 0, do: 1
+  def bin(x), do: 0
+  def trinary(x) when x < 0.33 and x > -0.33, do: 0
+  def trinary(x) when x >= 0.33, do: 1
+  def trinary(x) when x <= -0.33, do: -1
+  def abs(x), do: :erlang.abs(x)
+  def linear(x), do: x
+  def quadratic(x) do
+    sgn(x) * x * x
+  end
+  def sqrt(x), do: sgn(x) * :math.sqrt(Neuron.abs(x))
 end

@@ -2,11 +2,11 @@ defmodule Actuator do
   defrecord State, id: nil, monitor_pid: nil, organism_pid: nil, f: nil,
                    scape: nil, input_pids: nil, trace: false
 
-  def create(organism_pid) do
-    spawn(Actuator, :start, [organism_pid])
+  def start(organism_pid) do
+    spawn(Actuator, :init, [organism_pid])
   end
 
-  def start(organism_pid) do
+  def init(organism_pid) do
     #IO.puts "Actuator begin #{inspect self}"
 
     receive do
@@ -44,8 +44,8 @@ defmodule Actuator do
     #IO.inspect acc
     {fitness, halt_flag} = apply(Actuator, s.f, [Enum.reverse(acc), s.scape])
 
-    if s.trace do
-      IO.puts "Actuator #{inspect self}: #{inspect acc} -> #{fitness}, #{halt_flag}"
+    if s.trace and halt_flag == 1 do
+      #IO.puts "Actuator #{inspect self}: (#{inspect acc}) -> #{fitness}"
     end
 
     #:timer.sleep(1000)
@@ -59,6 +59,14 @@ defmodule Actuator do
   end
 
   def xor_send_output(output, scape) do
+    scape <- {self, :act, output}
+    receive do
+      {scape, fitness, halt_flag} ->
+        {fitness, halt_flag}
+    end
+  end
+
+  def img_send_output(output, scape) do
     scape <- {self, :act, output}
     receive do
       {scape, fitness, halt_flag} ->

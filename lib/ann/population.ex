@@ -5,9 +5,9 @@ defmodule Population do
 
   @init_species_size 100
   @species_size_limit 100
-  @generation_limit 200
+  @generation_limit :inf
   @evaluations_limit :inf
-  @fitness_goal :inf
+  @fitness_goal 1000
   @survival_percentage 0.5
   @neural_efficiency 0.2
 
@@ -35,10 +35,14 @@ defmodule Population do
                    goal_status: nil,
                    selection_algorithm: :competition
 
-  def test() do
+  def test(morphology // :img_mimic) do
     :random.seed(:erlang.now())
     Database.start
-    init_population({@init_population, @init_constraints, @op_mode,
+    :timer.sleep(100)
+    constraints = [Genotype.Constraint.new(morphology: morphology,
+                                           neural_afs: Neuron.afs,
+                                           allow_recurrent: false)]
+    init_population({@init_population, constraints, @op_mode,
                      @selection_algorithm})
   end
 
@@ -49,7 +53,6 @@ defmodule Population do
     :gen_server.start(Population, parameters, [])
 
   def init({op_mode, population_id, selection_algorithm}) do
-    IO.puts "INITIALIING"
     :erlang.process_flag(:trap_exit, true)
     Process.register(self, :population)
 
@@ -89,21 +92,52 @@ defmodule Population do
     end
 
     if state.organisms_left == 1 do
-      IO.puts "Mutating generation #{state.pop_generation}"
+      IO.puts "Generation #{state.pop_generation} finished"
+              <> ", num evaluations: #{state.eval_acc}"
 
       mutate_population(state.population_id, @species_size_limit, :competition)
       new_pop_generation = state.pop_generation + 1
 
-      IO.puts "Generation of population #{new_pop_generation} ended"
+      IO.puts "Finished mutating"
+
+      species_ids = Database.dirty_read(state.population_id).species_ids
+      species = Database.dirty_read(first(species_ids))
+      best_organism_id = Enum.first(species.champion_ids)
+
+      # Debug: create output images
+      IO.puts "Best organism #{inspect best_organism_id}. Testing:"
+
+      test_pid = Organism.start_link(best_organism_id, nil, :trace)
+      receive do
+        {:EXIT, ^test_pid, _} -> :ok # TODO: Better way to do this?
+      end
+      test_pid = Organism.start_link(best_organism_id, nil, :trace_extrapolate)
+      receive do
+        {:EXIT, ^test_pid, _} -> :ok # TODO: Better way to do this?
+      end
+
+      IO.puts "Best organism finished"
+
+      tmp_fitness = Database.dirty_read(best_organism_id).fitness
+      :file.rename("img_out_scale_1.png",
+        "output/img_out_gen_#{state.pop_generation}_scale_1_fit_#{tmp_fitness}.png")
+      :file.rename("img_out_scale_24.png",
+        "output/img_out_gen_#{state.pop_generation}_scale_24_fit_#{tmp_fitness}.png")
+
+      Database.organism_to_dot(best_organism_id,
+        "output/best_organism_gen_#{state.pop_generation}_fit_#{tmp_fitness}.dot")
+      System.cmd(
+        "dot -Tpng -ooutput/best_organism_gen_#{state.pop_generation}_fit_#{tmp_fitness}.png "
+        <> "output/best_organism_gen_#{state.pop_generation}_fit_#{tmp_fitness}.dot")
 
       case state.op_tag do
         :continue ->
-          species_ids = Database.dirty_read(state.population_id).species_ids
           fit_list = lc species_id inlist species_ids,
                      do: Database.dirty_read(species_id).fitness
           best_fitness = (lc {_, _, max_fitness, _} inlist fit_list,
                           do: max_fitness)
                          |> Enum.sort |> Enum.reverse |> Enum.first
+          IO.puts "Best fitness #{best_fitness}."
 
           if new_pop_generation >= @generation_limit or
              state.eval_acc >= @evaluations_limit or
@@ -114,15 +148,12 @@ defmodule Population do
                          .organisms_left(length(organism_ids))
                          .pop_generation(new_pop_generation)
 
-            species = Database.dirty_read(first(species_ids))
-            best_organism = Enum.first(species.champion_ids)
+            IO.puts "Evaluation finished"
 
-            IO.puts "Evaluation finished: Generation #{state.pop_generation}"
-                    <> ", num evaluations: #{state.eval_acc}"
-                    <> ", best fitness: #{best_fitness}"
-                    <> ", best organism: #{inspect best_organism}"
             {:stop, :normal, state}
           else
+            IO.puts ""
+
             organism_ids = get_organism_ids(state.population_id)
             cur_organisms = start_organisms(state.op_mode, organism_ids)
 
@@ -195,6 +226,7 @@ defmodule Population do
 
     case result do
       {:atomic, _} ->
+        IO.puts "Created population #{inspect population_id}"
         start({op_mode, population_id, selection_algorithm})
       error ->
         IO.puts "Population: Error: #{inspect error}"
@@ -270,8 +302,8 @@ defmodule Population do
         [_, _, champion_ids] = :lists.sublist(valid_summaries, 3)
                                |> List.unzip
 
-        IO.puts "Population: valid summaries: #{inspect valid_summaries}"
-        IO.puts "Population: invalid summaries: #{inspect invalid_summaries}"
+        #IO.puts "Population: valid summaries: #{inspect valid_summaries}"
+        #IO.puts "Population: invalid summaries: #{inspect invalid_summaries}"
         IO.puts "Population: neural energy cost: #{inspect neural_energy_cost}"
 
         new_organism_ids = Population.Competition.competition(valid_summaries,
@@ -310,6 +342,10 @@ defmodule Population do
                      do: Database.read(Database.read(id).monitor_id).neuron_ids
                          |> length)
                     |> :lists.sum
+    # Debug
+    IO.puts "Number of organisms: #{length organism_ids}"
+            <> ", number of neurons: #{total_neurons}"
+
     total_energy / total_neurons
   end
 

@@ -17,7 +17,7 @@ defmodule Mutations do
   def mutate(organism_id) do
     :random.seed(:erlang.now())
     
-    :mnesia.transaction fn ->
+    Database.transaction fn ->
       Database.update(organism_id, fn o -> o.generation(o.generation + 1) end)
       apply_mutators(organism_id) 
     end
@@ -346,13 +346,15 @@ defmodule Mutations do
   def get_next_layer([_ | pattern], from_layer, to_layer), do:
     get_next_layer(pattern, from_layer, to_layer) 
 
-  def link_from(from_neuron, to_id, generation)
+  def link_from(from_neuron, to_id, generation, constraint)
   when is_record(from_neuron, Genotype.Neuron) do
     {_, {from_layer, _}} = from_neuron.id
     {_, {to_layer, _}} = to_id
 
     if not Enum.member?(from_neuron.output_ids, to_id) do
       ro_ids = if from_layer >= to_layer do
+        if not constraint.allow_recurrent, do:
+          exit("No recurrent connections allowed")
         [to_id | from_neuron.ro_ids]
       else
         from_neuron.ro_ids
@@ -367,7 +369,7 @@ defmodule Mutations do
     end
   end
 
-  def link_from(from_sensor, to_neuron_id, generation)
+  def link_from(from_sensor, to_neuron_id, generation, _constraint)
   when is_record(from_sensor, Genotype.Sensor) do
     if not Enum.member?(from_sensor.output_ids, to_neuron_id) do
       output_ids = [to_neuron_id | from_sensor.output_ids]
@@ -378,7 +380,7 @@ defmodule Mutations do
     end
   end
 
-  def link_to(from_id, to_neuron, vl, generation)
+  def link_to(from_id, to_neuron, vl, generation, constraint)
   when is_record(to_neuron, Genotype.Neuron) do
     if not List.keymember?(to_neuron.w_input_ids, from_id, 0) do
       weights = generate_neural_weights(vl)
@@ -391,7 +393,7 @@ defmodule Mutations do
     end
   end
 
-  def link_to(from_neuron_id, to_actuator, 1, generation)
+  def link_to(from_neuron_id, to_actuator, 1, generation, _constraint)
   when is_record(to_actuator, Genotype.Actuator) do
     if not Enum.member?(to_actuator.input_ids, from_neuron_id) do
       if length(to_actuator.input_ids) >= to_actuator.vl, do:
@@ -450,13 +452,15 @@ defmodule Mutations do
   def do_link(organism_id, from_id, to_id) do
     organism = Database.read(organism_id)
 
-    from = Database.update from_id, &link_from(&1, to_id, organism.generation)
+    from = Database.update from_id, &link_from(&1, to_id, organism.generation,
+                                               organism.constraint)
     vl = cond do
       is_record(from, Genotype.Neuron) -> 1
       is_record(from, Genotype.Sensor) -> from.vl
     end
 
-    Database.update to_id, &link_to(from_id, &1, vl, organism.generation)
+    Database.update to_id, &link_to(from_id, &1, vl, organism.generation,
+                                    organism.constraint)
   end
 
   def do_cut_link(organism_id, from_id, to_id) do
