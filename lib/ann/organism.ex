@@ -8,14 +8,16 @@ defmodule Organism do
                    actuator_pids: nil, scape_pids: nil,
                    perturbed_neuron_pids: []
 
-  def start(organism_id, population_pid, mode // :train) do
+  def start(organism_id, population_pid // :nil, mode // :train) do
     spawn(Organism, :init, [organism_id, population_pid, mode])
+  end
+
+  def start_link(organism_id, population_pid // :nil, mode // :train) do
+    spawn_link(Organism, :init, [organism_id, population_pid, mode])
   end
 
   def init(organism_id, population_pid, mode) do
     :random.seed(:erlang.now())
-
-    #IO.puts "Organism begin #{inspect self}, id #{inspect organism_id}"
 
     ids_to_pids = :ets.new(:ids_to_pids, [:set, :private])
 
@@ -24,13 +26,13 @@ defmodule Organism do
       monitor = Database.read(organism.monitor_id)
 
       scape_pids = spawn_scapes(ids_to_pids, monitor.sensor_ids,
-                                monitor.actuator_ids)
+                                monitor.actuator_ids, mode)
       spawn_units(ids_to_pids, Monitor, [monitor.id])
       spawn_units(ids_to_pids, Sensor, monitor.sensor_ids)
       spawn_units(ids_to_pids, Actuator, monitor.actuator_ids)
       spawn_units(ids_to_pids, Neuron, monitor.neuron_ids)
 
-      if mode == :trace do # Tell actuators to print output to console
+      if mode == :trace do # Tell actuators ands scapes to print output to console
         Enum.map monitor.actuator_ids, fn id ->
           :ets.lookup_element(ids_to_pids, id, 2) <- {self, :enable_trace}
         end
@@ -57,9 +59,12 @@ defmodule Organism do
         case mode do
           :train -> loop_train(state, 0, 0, 0, 0, 1) 
           :trace -> loop_trace(state)
+          :trace_extrapolate -> loop_trace(state)
+          :test -> loop_test(state)
         end
       error ->
         IO.puts "Failed to create organism #{inspect organism_id}: #{inspect error}"
+        throw error
         # TODO: Clean up started processes?
     end
   end
@@ -69,7 +74,18 @@ defmodule Organism do
 
     receive do
       {^monitor_pid, :completed, fitness, cycles, time} ->
+        terminate(s)
         IO.puts "Evaluation finished: Fitness #{fitness}, cycles #{cycles}, time #{time}"
+    end
+  end
+
+  def loop_test(s) do
+    monitor_pid = s.monitor_pid
+
+    receive do
+      {^monitor_pid, :completed, fitness, cycles, time} ->
+        terminate(s)
+        exit(:normal)
     end
   end
 
@@ -142,11 +158,9 @@ defmodule Organism do
             update_genotype(s.ids_to_pids, new_weights)
           end
 
-          # Terminate
-          s.monitor_pid <- {self, :terminate}
-          Enum.map s.scape_pids, fn pid -> pid <- {self, :terminate} end
-
           #IO.puts "Organism finished training: Fitness: #{inspect new_highest_fitness}, num cycles: #{new_cycle_acc}, time: #{inspect new_time_acc}, num evals: #{eval_acc}"
+
+          terminate(s)
 
           if s.population_pid != nil do
             :gen_server.cast(s.population_pid,
@@ -159,9 +173,19 @@ defmodule Organism do
     end
   end
 
+  def terminate(s) do
+    s.monitor_pid <- {self, :terminate}
+    lc pid inlist s.scape_pids do
+      pid <- {self, :terminate}
+      receive do
+        {pid, :finished} -> :ok
+      end
+    end
+  end
+
   def spawn_units(ids_to_pids, type, ids) do
     Enum.map ids, fn id ->
-      pid = type.create(self)
+      pid = type.start(self)
       :ets.insert(ids_to_pids, {id, pid})
       :ets.insert(ids_to_pids, {pid, id})
     end
@@ -211,6 +235,7 @@ defmodule Organism do
     sorted_w_input_ids = sensor_w_input_ids ++ neuron_w_input_ids
 
     pid = :ets.lookup_element(ids_to_pids, r.id, 2)
+    #IO.puts "Looking up #{inspect r.monitor_id}"
     monitor_pid = :ets.lookup_element(ids_to_pids, r.monitor_id, 2)
     output_pids = Enum.map r.output_ids, fn id ->
       :ets.lookup_element(ids_to_pids, id, 2)
@@ -229,6 +254,7 @@ defmodule Organism do
   end
   def link_neurons([], _), do: :ok
 
+  #  Organism.start {Genotype.Organism, 112513477}, nil, :trace
   def link_monitor(monitor, ids_to_pids) do
     pid = :ets.lookup_element(ids_to_pids, monitor.id, 2)
     sensor_pids = Enum.map monitor.sensor_ids, fn id ->
@@ -272,7 +298,7 @@ defmodule Organism do
     #  end
   end
 
-  def spawn_scapes(ids_to_pids, sensor_ids, actuator_ids) do
+  def spawn_scapes(ids_to_pids, sensor_ids, actuator_ids, mode) do
     sensor_scapes = Enum.map(sensor_ids, fn id ->
       Database.read(id).scape end)
     actuator_scapes = Enum.map(actuator_ids, fn id ->
@@ -281,7 +307,6 @@ defmodule Organism do
 
     scape_pids_names = Enum.map scapes, fn
       {:private, name} ->
-        #IO.puts "Creating scape #{name}"
         {Scape.create(self), {:private, name}}
     end
 
@@ -289,7 +314,10 @@ defmodule Organism do
         :ets.insert(ids_to_pids, {name, pid})
         :ets.insert(ids_to_pids, {pid, name})
 
-        pid <- {self, name}
+        case name do
+          {:private, n} ->
+            pid <- {self, n, mode}
+        end
     end
 
     Enum.map scape_pids_names, fn {pid, name} -> pid end
@@ -302,9 +330,5 @@ defmodule Organism do
       after 100000 ->
         IO.puts "Not all readys received #{n}"
     end
-  end
-
-  def reactivate_neurons(state) do
-
   end
 end

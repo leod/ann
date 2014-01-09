@@ -1,13 +1,14 @@
 defmodule Sensor do
   import Enum
 
-  defrecord State, id: nil, monitor_pid: nil, f: nil, scape: nil, vl: nil, output_pids: nil
-
-  def create(organism_pid) do
-    spawn(Sensor, :start, [organism_pid])
-  end
+  defrecord State, id: nil, monitor_pid: nil, f: nil, scape: nil, vl: nil,
+                   output_pids: nil
 
   def start(organism_pid) do
+    spawn(Sensor, :init, [organism_pid])
+  end
+
+  def init(organism_pid) do
     #IO.puts "Sensor begin #{inspect self}"
 
     receive do
@@ -45,6 +46,15 @@ defmodule Sensor do
   end
 
   def xor_get_input(vl, scape) do
+    scape <- {self, :sense}
+
+    receive do
+      {scape, :input, v} ->
+        v
+    end
+  end
+
+  def img_get_input(vl, scape) do
     scape <- {self, :sense}
 
     receive do

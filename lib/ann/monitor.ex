@@ -4,11 +4,11 @@ defmodule Monitor do
   defrecord State, id: nil, organism_pid: nil,
                    sensor_pids: nil, actuator_pids: nil, neuron_pids: nil
 
-  def create(organism_pid) do
-    spawn(Monitor, :start, [organism_pid])
+  def start(organism_pid) do
+    spawn(Monitor, :init, [organism_pid])
   end
 
-  def start(organism_pid) do
+  def init(organism_pid) do
     #IO.puts "Monitor begin #{inspect self}"
 
     receive do
@@ -37,7 +37,7 @@ defmodule Monitor do
 
       {^organism_pid, :terminate} ->
         #IO.puts "Monitor terminating"
-        terminate([s.sensor_pids, s.neuron_pids, s.actuator_pids])
+        terminate(s)
     end
   end
 
@@ -71,7 +71,7 @@ defmodule Monitor do
 
       {^organism_pid, :terminate} ->
         #IO.puts "Monitor terminating"
-        terminate([s.sensor_pids, s.neuron_pids, s.actuator_pids])
+        terminate(s)
     end
   end
 
@@ -85,9 +85,8 @@ defmodule Monitor do
 
   def get_state([], acc), do: acc
 
-  def terminate(pids) do
-    map List.flatten(pids), fn pid ->
-      pid <- {self, :terminate}
-    end
+  def terminate(s) do
+    pids = [s.sensor_pids, s.neuron_pids, s.actuator_pids]
+    lc pid inlist List.flatten(pids), do: pid <- {self, :terminate}
   end
 end

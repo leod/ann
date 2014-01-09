@@ -3,6 +3,8 @@ defmodule Platform do
 
   defrecord State, active_modules: [], active_scapes: []
   defrecord ScapeInfo, address: nil, type: nil, parameters: nil
+
+  def start(), do: start({[], []})
   
   def start(init_state)do
     case Process.whereis(:platform) do

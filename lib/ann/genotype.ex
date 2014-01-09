@@ -45,7 +45,8 @@ defmodule Genotype do
                      innovation_factor: 0,
                      fitness: 0
   defrecord Constraint, morphology: [],
-                        neural_afs: []
+                        neural_afs: [],
+                        allow_recurrent: true
   defrecord Population, id: nil,
                         platform_id: nil,
                         species_ids: [],
@@ -199,7 +200,7 @@ defmodule Genotype do
   end
 
   def generalize_history(history) do
-    IO.puts "TODO generalize_history"
+    #IO.puts "TODO generalize_history"
     history
   end
 

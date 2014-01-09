@@ -5,17 +5,44 @@ defmodule Morphology do
                          scape: {:private, :xor_sim})]
   end
 
+  def get_init_sensors(:img_mimic) do
+    [Genotype.Sensor.new(f: :img_get_input,
+                         vl: 2,
+                         scape: {:private, :img_sim})]
+  end
+
   def get_init_actuators([]) do
     [Genotype.Actuator.new(f: :xor_send_output,
-                           vl: 1,
+                           vl: 2,
                            scape: {:private, :xor_sim})]
+  end
+
+  def get_init_actuators(:img_mimic) do
+    # hack
+    #:wx.new()
+    #image = :wxImage.new()
+    #:wxImage.loadFile(image, 'test2.png')
+    #vl = :wxImage.getData(image) |> :binary.bin_to_list |> length |> div(3)
+    #:wx.destroy()
+
+    [Genotype.Actuator.new(f: :img_send_output,
+                           vl: 1,
+                           scape: {:private, :img_sim})]
   end
 
   def get_sensors([]) do
     []
   end
 
+  def get_sensors(:img_mimic) do
+    []
+  end
+
   def get_actuators([]) do
+    []
+  end
+
+  def get_actuators(:img_mimic) do
     []
   end
 end
