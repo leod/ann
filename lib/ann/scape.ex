@@ -55,7 +55,7 @@ defmodule Scape do
         height = :wxImage.getHeight(image)
         :wx.destroy()
 
-        img_sim_trace_init(organism_pid, width, height, 24)
+        img_sim_trace_init(organism_pid, width, height, 12)
     end
   end
 
@@ -90,7 +90,7 @@ defmodule Scape do
           img_sim_trace(organism_pid, inputs, frame, acc_output ++ output)
         else
           # Save image for debugging
-          data = map(acc_output ++ [output], fn x ->
+          data = map(acc_output ++ output, fn x ->
                    s = cond do
                      x > 1 -> 1
                      x < -1 -> -1
