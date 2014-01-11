@@ -151,7 +151,11 @@ defmodule Database do
                    .sensor_ids(clone_sensor_ids)
                    .actuator_ids(clone_actuator_ids)
                    .neuron_ids(clone_neuron_ids))
+      clone_pattern = map organism.pattern, fn {layer, ids} ->
+        {layer, map(ids, &:ets.lookup_element(id_map, &1, 2))}
+      end
       write(organism.id(clone_organism_id)
+                    .pattern(clone_pattern)
                     .monitor_id(clone_monitor_id))
 
       :ets.delete(id_map)

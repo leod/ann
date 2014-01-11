@@ -121,8 +121,8 @@ defmodule Population do
       tmp_fitness = Database.dirty_read(best_organism_id).fitness
       :file.rename("img_out_scale_1.png",
         "output/img_out_gen_#{state.pop_generation}_scale_1_fit_#{tmp_fitness}.png")
-      :file.rename("img_out_scale_24.png",
-        "output/img_out_gen_#{state.pop_generation}_scale_24_fit_#{tmp_fitness}.png")
+      :file.rename("img_out_scale_12.png",
+        "output/img_out_gen_#{state.pop_generation}_scale_12_fit_#{tmp_fitness}.png")
 
       Database.organism_to_dot(best_organism_id,
         "output/best_organism_gen_#{state.pop_generation}_fit_#{tmp_fitness}.dot")

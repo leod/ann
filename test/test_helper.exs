@@ -1,0 +1,2 @@
+Database.start
+ExUnit.start
