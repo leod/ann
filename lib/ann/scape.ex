@@ -1,6 +1,9 @@
 defmodule Scape do
   import Enum
 
+  @num_runs 10
+  @num_moves 40
+
   def create(organism_pid) do
     spawn(Scape, :start, [organism_pid])
   end
@@ -9,6 +12,8 @@ defmodule Scape do
     receive do
       {^organism_pid, :xor_sim, _} ->
         xor_sim(organism_pid)
+      {^organism_pid, :game_2048_sim, _} ->
+        game_2048_sim(organism_pid)
       {^organism_pid, :img_sim, :train} ->
         :wx.new()
         image = :wxImage.new()
@@ -56,6 +61,72 @@ defmodule Scape do
         :wx.destroy()
 
         img_sim_trace_init(organism_pid, width, height, 12)
+    end
+  end
+
+  def game_2048_sim(organism_pid) do
+    :random.seed(:erlang.now())
+    game_2048_sim(organism_pid, TwoThousandFourtyEight.initial_state, 0, @num_moves-1, 0, @num_runs-1)
+  end
+
+  def game_2048_sim(organism_pid, state, score, moves_left, sum_fitness, runs_left) do
+    receive do
+      {from, :sense} ->
+        #IO.puts "sense request"
+        from <- {self, :input, game_2048_state_to_floats(state)}
+        game_2048_sim(organism_pid, state, score, moves_left, sum_fitness, runs_left)
+
+      {from, :act, output_list} ->
+        #IO.puts "act request"
+        output = Enum.at output_list, 0
+        dir = game_2048_float_to_dir(output)
+        #IO.puts "move #{inspect dir}"
+        {new_state, new_score, can_move} = TwoThousandFourtyEight.move(state, dir)
+
+        if not can_move or moves_left == 0 do
+          #IO.puts "actually finished a game right there: #{score}"
+          #IO.inspect new_state
+          max_tile = List.flatten(new_state)
+                     |> Enum.filter(fn x -> x != nil end)
+                     |> Enum.max
+          #IO.inspect max_tile
+
+          #fitness = score + new_score
+          #fitness = max_tile
+          #fitness = (score + new_score) / (200 - moves_left)
+          add_fitness = max_tile + (score + new_score) / (@num_moves - moves_left)
+
+          if runs_left == 0 do
+            from <- {self, (sum_fitness + add_fitness) / @num_runs, 1}
+            game_2048_sim(organism_pid, TwoThousandFourtyEight.initial_state, 0, @num_moves-1, 0, @num_runs-1)
+          else
+            from <- {self, 0, 0}
+            game_2048_sim(organism_pid, TwoThousandFourtyEight.initial_state, 0, @num_moves-1, sum_fitness + add_fitness, runs_left-1)
+          end
+        else
+          from <- {self, 0, 0}
+          game_2048_sim(organism_pid, new_state, score + new_score, moves_left-1, sum_fitness, runs_left)
+        end
+
+      {^organism_pid, :terminate} ->
+        organism_pid <- {self, :finished}
+    end
+  end
+
+  def game_2048_state_to_floats(state) do
+    List.flatten(state)
+    |> Enum.map(fn
+                  nil -> -1
+                  x -> x / 2048
+                end)
+  end
+
+  def game_2048_float_to_dir(f) do
+    cond do
+      f >= -1 and f < -0.5 -> :left
+      f >= -0.5 and f < 0 -> :right
+      f >= 0 and f < 0.5 -> :up
+      true -> :down
     end
   end
 

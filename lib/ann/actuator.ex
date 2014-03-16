@@ -73,4 +73,14 @@ defmodule Actuator do
         {fitness, halt_flag}
     end
   end
+
+  def game_2048_send_output(output, scape) do
+    #IO.puts "SENDING"
+    scape <- {self, :act, output}
+    receive do
+      {scape, fitness, halt_flag} ->
+        #IO.puts "RECEIVED"
+        {fitness, halt_flag}
+    end
+  end
 end

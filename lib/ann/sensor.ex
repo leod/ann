@@ -62,4 +62,13 @@ defmodule Sensor do
         v
     end
   end
+
+  def game_2048_get_input(vl, scape) do
+    scape <- {self, :sense}
+
+    receive do
+      {scape, :input, v} ->
+        v
+    end
+  end
 end

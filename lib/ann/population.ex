@@ -9,7 +9,7 @@ defmodule Population do
   @evaluations_limit :inf
   @fitness_goal 1000
   @survival_percentage 0.5
-  @neural_efficiency 0.2
+  @neural_efficiency 0.1
 
   @init_population {Genotype.Population, :test}
   @init_constraints [Genotype.Constraint.new(morphology: [], neural_afs: [:tanh])]
@@ -35,12 +35,12 @@ defmodule Population do
                    goal_status: nil,
                    selection_algorithm: :competition
 
-  def test(morphology // :img_mimic) do
+  def test(morphology // :game_2048) do
     :random.seed(:erlang.now())
     Database.start
     :timer.sleep(100)
     constraints = [Genotype.Constraint.new(morphology: morphology,
-                                           neural_afs: Neuron.afs,
+                                           neural_afs: [:tanh],
                                            allow_recurrent: false)]
     init_population({@init_population, constraints, @op_mode,
                      @selection_algorithm})
@@ -286,7 +286,7 @@ defmodule Population do
         # divided by a factor depending on the organism's number of neurons 
         sorted_summaries = summaries
           |> map(fn summary={fitness, num_neurons, _} ->
-                    {fitness / :math.pow(num_neurons, @neural_efficiency),
+                    {fitness / 1, # :math.pow(num_neurons, @neural_efficiency),
                     summary}
                  end)
           |> sort
