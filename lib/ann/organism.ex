@@ -1,7 +1,7 @@
 defmodule Organism do
   import Genotype
 
-  @max_attempts 100
+  @max_attempts 20
 
   defrecord State, organism_id: nil, population_pid: nil, ids_to_pids: nil,
                    monitor_pid: nil, sensor_pids: nil, neuron_pids: nil,

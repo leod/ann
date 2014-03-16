@@ -11,6 +11,12 @@ defmodule Morphology do
                          scape: {:private, :img_sim})]
   end
 
+  def get_init_sensors(:game_2048) do
+    [Genotype.Sensor.new(f: :game_2048_get_input,
+                         vl: 16,
+                         scape: {:private, :game_2048_sim})]
+  end
+
   def get_init_actuators([]) do
     [Genotype.Actuator.new(f: :xor_send_output,
                            vl: 2,
@@ -28,6 +34,12 @@ defmodule Morphology do
     [Genotype.Actuator.new(f: :img_send_output,
                            vl: 1,
                            scape: {:private, :img_sim})]
+  end
+
+  def get_init_actuators(:game_2048) do
+    [Genotype.Actuator.new(f: :game_2048_send_output,
+                           vl: 1,
+                           scape: {:private, :game_2048_sim})] 
   end
 
   def get_sensors([]) do
