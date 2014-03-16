@@ -111,18 +111,18 @@ defmodule Population do
       receive do
         {:EXIT, ^test_pid, _} -> :ok # TODO: Better way to do this?
       end
-      test_pid = Organism.start_link(best_organism_id, nil, :trace_extrapolate)
-      receive do
-        {:EXIT, ^test_pid, _} -> :ok # TODO: Better way to do this?
-      end
+      #test_pid = Organism.start_link(best_organism_id, nil, :trace_extrapolate)
+      #receive do
+        #{:EXIT, ^test_pid, _} -> :ok # TODO: Better way to do this?
+      #end
 
-      IO.puts "Best organism finished"
+      #IO.puts "Best organism finished"
 
       tmp_fitness = Database.dirty_read(best_organism_id).fitness
-      :file.rename("img_out_scale_1.png",
-        "output/img_out_gen_#{state.pop_generation}_scale_1_fit_#{tmp_fitness}.png")
-      :file.rename("img_out_scale_12.png",
-        "output/img_out_gen_#{state.pop_generation}_scale_12_fit_#{tmp_fitness}.png")
+      #:file.rename("img_out_scale_1.png",
+        #"output/img_out_gen_#{state.pop_generation}_scale_1_fit_#{tmp_fitness}.png")
+      #:file.rename("img_out_scale_12.png",
+        #"output/img_out_gen_#{state.pop_generation}_scale_12_fit_#{tmp_fitness}.png")
 
       Database.organism_to_dot(best_organism_id,
         "output/best_organism_gen_#{state.pop_generation}_fit_#{tmp_fitness}.dot")

@@ -1,8 +1,8 @@
 defmodule Scape do
   import Enum
 
-  @num_runs 15
-  @num_moves 50
+  @num_runs 10
+  @num_moves 200
 
   def create(organism_pid) do
     spawn(Scape, :start, [organism_pid])
@@ -12,8 +12,8 @@ defmodule Scape do
     receive do
       {^organism_pid, :xor_sim, _} ->
         xor_sim(organism_pid)
-      {^organism_pid, :game_2048_sim, _} ->
-        game_2048_sim(organism_pid)
+      {^organism_pid, :game_2048_sim, mode} ->
+        game_2048_sim(organism_pid, mode)
       {^organism_pid, :img_sim, :train} ->
         :wx.new()
         image = :wxImage.new()
@@ -64,22 +64,27 @@ defmodule Scape do
     end
   end
 
-  def game_2048_sim(organism_pid) do
+  def game_2048_sim(organism_pid, mode) do
     :random.seed(:erlang.now())
-    game_2048_sim(organism_pid, TwoThousandFourtyEight.initial_state, 0, @num_moves-1, 0, @num_runs-1)
+    game_2048_sim(organism_pid, mode, TwoThousandFourtyEight.initial_state, 0, @num_moves-1, 0, @num_runs-1)
   end
 
-  def game_2048_sim(organism_pid, state, score, moves_left, sum_fitness, runs_left) do
+  def game_2048_sim(organism_pid, mode, state, score, moves_left, sum_fitness, runs_left) do
     receive do
       {from, :sense} ->
         #IO.puts "sense request"
         from <- {self, :input, game_2048_state_to_floats(state)}
-        game_2048_sim(organism_pid, state, score, moves_left, sum_fitness, runs_left)
+        game_2048_sim(organism_pid, mode, state, score, moves_left, sum_fitness, runs_left)
 
       {from, :act, output_list} ->
         #IO.puts "act request"
         output = Enum.at output_list, 0
         dir = game_2048_float_to_dir(output)
+        if mode == :trace do
+          TwoThousandFourtyEight.print(state)
+          IO.inspect dir
+          IO.puts "----------------------------------------------------"
+        end
         #IO.puts "move #{inspect dir}"
         {new_state, new_score, can_move} = TwoThousandFourtyEight.move(state, dir)
 
@@ -98,14 +103,14 @@ defmodule Scape do
 
           if runs_left == 0 do
             from <- {self, (sum_fitness + add_fitness) / @num_runs, 1}
-            game_2048_sim(organism_pid, TwoThousandFourtyEight.initial_state, 0, @num_moves-1, 0, @num_runs-1)
+            game_2048_sim(organism_pid, mode, TwoThousandFourtyEight.initial_state, 0, @num_moves-1, 0, @num_runs-1)
           else
             from <- {self, 0, 0}
-            game_2048_sim(organism_pid, TwoThousandFourtyEight.initial_state, 0, @num_moves-1, sum_fitness + add_fitness, runs_left-1)
+            game_2048_sim(organism_pid, mode, TwoThousandFourtyEight.initial_state, 0, @num_moves-1, sum_fitness + add_fitness, runs_left-1)
           end
         else
           from <- {self, 0, 0}
-          game_2048_sim(organism_pid, new_state, score + new_score, moves_left-1, sum_fitness, runs_left)
+          game_2048_sim(organism_pid, mode, new_state, score + new_score, moves_left-1, sum_fitness, runs_left)
         end
 
       {^organism_pid, :terminate} ->
