@@ -3,8 +3,8 @@ defmodule Population do
 
   import Enum
 
-  @init_species_size 100
-  @species_size_limit 100
+  @init_species_size 50
+  @species_size_limit 50
   @generation_limit :inf
   @evaluations_limit :inf
   @fitness_goal 1000
@@ -12,7 +12,7 @@ defmodule Population do
   @neural_efficiency 0.1
 
   @init_population {Genotype.Population, :test}
-  @init_constraints [Genotype.Constraint.new(morphology: [], neural_afs: [:tanh])]
+  @init_constraints [Genotype.Constraint.new(morphology: [], neural_afs: [:tanh, :trinary, :bin, :linear, :sgn])]
   @op_mode :gt
   @selection_algorithm :competition
   
@@ -40,8 +40,8 @@ defmodule Population do
     Database.start
     :timer.sleep(100)
     constraints = [Genotype.Constraint.new(morphology: morphology,
-                                           neural_afs: [:tanh],
-                                           allow_recurrent: false)]
+                                           neural_afs: [:tanh, :bin, :sgn, :trinary, :linear],
+                                           allow_recurrent: true)]
     init_population({@init_population, constraints, @op_mode,
                      @selection_algorithm})
   end

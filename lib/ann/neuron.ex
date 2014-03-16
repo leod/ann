@@ -4,8 +4,8 @@ defmodule Neuron do
 
   import Enum
 
-  def delta_multiplier, do: :math.pi() * 2
-  def sat_limit, do: :math.pi() * 2
+  def delta_multiplier, do: 1 #:math.pi() * 2
+  def sat_limit, do: 1 #:math.pi() * 2
 
   defrecord State, id: nil, organism_pid: nil, monitor_pid: nil, af: nil,
                    w_input_pids: nil, output_pids: nil,

@@ -1,8 +1,8 @@
 defmodule Scape do
   import Enum
 
-  @num_runs 10
-  @num_moves 40
+  @num_runs 15
+  @num_moves 50
 
   def create(organism_pid) do
     spawn(Scape, :start, [organism_pid])
